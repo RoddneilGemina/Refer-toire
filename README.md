@@ -139,7 +139,7 @@ The repository follows a clean two-branch deployment model:
 
 | Branch | Purpose | Tracking |
 | :--- | :--- | :--- |
-| **`prod`** | Production-ready, stable releases deployed to users. | `origin/prod` |
+| **`beta`** | Stable pre-release and staging builds for user testing. | `origin/beta` |
 | **`dev`** | Active feature development and ongoing integration. | `origin/dev` |
 
 To switch branches:
@@ -147,8 +147,8 @@ To switch branches:
 # Work on development
 git checkout dev
 
-# Switch to production
-git checkout prod
+# Switch to beta
+git checkout beta
 ```
 
 ---
