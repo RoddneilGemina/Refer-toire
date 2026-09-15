@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   SafeAreaView,
   Alert,
   Share,
+  Platform,
+  Dimensions,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,18 +15,49 @@ import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
+import PdfViewer from '@/components/PdfViewer';
+import { ViewMode } from '@/components/PdfViewer.types';
 
 export default function ScoreViewerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme];
-  const { scores, toggleFavorite, preferredVoicePart } = useRepertoire();
+  const { scores, currentInstance, localUris, toggleFavorite, preferredVoicePart } =
+    useRepertoire();
 
-  const score = scores.find(s => s.id === id);
+  // Find score from active repertoire or instance manifest
+  const score =
+    scores.find((s) => s.id === id) ||
+    currentInstance?.scores.find((s) => s.id === id);
 
+  // Sheet Music Reader States
   const [stageMode, setStageMode] = useState<boolean>(false);
+  const [sepiaMode, setSepiaMode] = useState<boolean>(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('single');
+  const [zoomScale, setZoomScale] = useState<number>(1.0);
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [showNotesDrawer, setShowNotesDrawer] = useState<boolean>(true);
+  const [totalPages, setTotalPages] = useState<number>(score?.pageCount || 1);
+  const [showNotesDrawer, setShowNotesDrawer] = useState<boolean>(false);
+  const [showControls, setShowControls] = useState<boolean>(true);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  // Sync totalPages if score metadata changes
+  useEffect(() => {
+    if (score?.pageCount && score.pageCount > totalPages) {
+      setTotalPages(score.pageCount);
+    }
+  }, [score?.pageCount]);
+
+  // Handle Fullscreen change listener on Web
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const handleFsChange = () => {
+        setIsFullscreen(!!document.fullscreenElement);
+      };
+      document.addEventListener('fullscreenchange', handleFsChange);
+      return () => document.removeEventListener('fullscreenchange', handleFsChange);
+    }
+  }, []);
 
   if (!score) {
     return (
@@ -33,6 +65,9 @@ export default function ScoreViewerScreen() {
         <View style={[styles.notFoundContainer, { backgroundColor: 'transparent' }]}>
           <Ionicons name="alert-circle-outline" size={48} color={Colors.status.failed} />
           <Text style={[styles.notFoundTitle, { color: theme.text }]}>Score Not Found</Text>
+          <Text style={[styles.notFoundSub, { color: theme.subtext }]}>
+            This musical score may have been removed or is not available.
+          </Text>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Text style={[styles.backButtonText, { color: theme.tint }]}>Return to Library</Text>
           </TouchableOpacity>
@@ -56,15 +91,18 @@ export default function ScoreViewerScreen() {
   const stageText = '#E6EDF3';
   const stageBorder = '#30363D';
 
-  const activeBg = stageMode ? stageBackground : theme.background;
-  const activeCard = stageMode ? stageCard : theme.card;
-  const activeText = stageMode ? stageText : theme.text;
-  const activeBorder = stageMode ? stageBorder : theme.border;
+  const activeBg = stageMode ? stageBackground : sepiaMode ? '#FAF5EA' : theme.background;
+  const activeCard = stageMode ? stageCard : sepiaMode ? '#F2E8D3' : theme.card;
+  const activeText = stageMode ? stageText : sepiaMode ? '#4A3B2C' : theme.text;
+  const activeBorder = stageMode ? stageBorder : sepiaMode ? '#E2D5BE' : theme.border;
+
+  // Resolved PDF target
+  const resolvedLocalUri = localUris[score.id] || score.localUri;
 
   const handleShare = async () => {
     try {
-      if (score.localUri && (await Sharing.isAvailableAsync())) {
-        await Sharing.shareAsync(score.localUri, {
+      if (resolvedLocalUri && (await Sharing.isAvailableAsync())) {
+        await Sharing.shareAsync(resolvedLocalUri, {
           mimeType: 'application/pdf',
           dialogTitle: `Share ${score.title} Sheet Music`,
           UTI: 'com.adobe.pdf',
@@ -81,199 +119,260 @@ export default function ScoreViewerScreen() {
     }
   };
 
+  const handleToggleFullscreen = () => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+        setIsFullscreen(true);
+      } else {
+        document.exitFullscreen().catch(() => {});
+        setIsFullscreen(false);
+      }
+    }
+  };
+
+  const handleZoomIn = () => {
+    setZoomScale((prev) => Math.min(2.5, +(prev + 0.2).toFixed(2)));
+  };
+
+  const handleZoomOut = () => {
+    setZoomScale((prev) => Math.max(0.6, +(prev - 0.2).toFixed(2)));
+  };
+
+  const handleResetZoom = () => {
+    setZoomScale(1.0);
+  };
+
+  const handlePrevPage = () => {
+    setCurrentPage((prev) => Math.max(1, prev - 1));
+  };
+
+  const handleNextPage = () => {
+    setCurrentPage((prev) => Math.min(totalPages, prev + 1));
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: activeBg }]}>
-      {/* Top Action Bar */}
-      <View style={[styles.header, { backgroundColor: activeCard, borderBottomColor: activeBorder }]}>
-        <TouchableOpacity
-          style={[styles.iconButton, { backgroundColor: theme.surfaceSubtle }]}
-          onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={22} color={activeText} />
-        </TouchableOpacity>
-
-        <View style={{ flex: 1, marginHorizontal: 12, backgroundColor: 'transparent' }}>
-          <Text style={[styles.headerTitle, { color: activeText }]} numberOfLines={1}>
-            {score.title}
-          </Text>
-          <Text style={[styles.headerSub, { color: theme.subtext }]} numberOfLines={1}>
-            {score.composer}
-          </Text>
-        </View>
-
-        <View style={[styles.headerActions, { backgroundColor: 'transparent' }]}>
-          {/* Stage Mode Toggle */}
-          <TouchableOpacity
-            style={[
-              styles.iconButton,
-              {
-                backgroundColor: stageMode ? '#F59E0B22' : theme.surfaceSubtle,
-                borderColor: stageMode ? '#F59E0B' : 'transparent',
-                borderWidth: stageMode ? 1 : 0,
-              },
-            ]}
-            onPress={() => setStageMode(!stageMode)}>
-            <Ionicons
-              name={stageMode ? 'flash' : 'flash-outline'}
-              size={18}
-              color={stageMode ? '#F59E0B' : activeText}
-            />
-          </TouchableOpacity>
-
-          {/* Share / Open External (forScore) */}
+      {/* Top Action Bar (toggled with screen click or performance mode) */}
+      {showControls && (
+        <View style={[styles.header, { backgroundColor: activeCard, borderBottomColor: activeBorder }]}>
+          {/* Back Button */}
           <TouchableOpacity
             style={[styles.iconButton, { backgroundColor: theme.surfaceSubtle }]}
-            onPress={handleShare}>
-            <Ionicons name="share-outline" size={18} color={activeText} />
+            onPress={() => router.back()}
+            accessibilityLabel="Back to Repertoire">
+            <Ionicons name="chevron-back" size={20} color={activeText} />
           </TouchableOpacity>
 
-          {/* Favorite Toggle */}
-          <TouchableOpacity
-            style={[styles.iconButton, { backgroundColor: theme.surfaceSubtle }]}
-            onPress={() => toggleFavorite(score.id)}>
-            <Ionicons
-              name={score.isFavorite ? 'star' : 'star-outline'}
-              size={18}
-              color={score.isFavorite ? '#F59E0B' : activeText}
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Main Score Music Sheet Canvas / Reader */}
-      <View style={[styles.viewerContainer, { backgroundColor: activeBg }]}>
-        <ScrollView
-          contentContainerStyle={styles.sheetScroll}
-          maximumZoomScale={3}
-          minimumZoomScale={1}>
-          {/* Simulated High-Fidelity Sheet Music Score Page */}
-          <View
-            style={[
-              styles.sheetPage,
-              {
-                backgroundColor: stageMode ? '#111620' : '#FFFFFF',
-                borderColor: activeBorder,
-                shadowColor: '#000',
-              },
-            ]}>
-            {/* Score Page Header */}
-            <View style={[styles.pageHeader, { backgroundColor: 'transparent' }]}>
-              <View style={[styles.pageHeaderLeft, { backgroundColor: 'transparent' }]}>
-                <Text
-                  style={[
-                    styles.scorePageVoicing,
-                    { color: stageMode ? '#93C5FD' : '#1E40AF' },
-                  ]}>
+          {/* Title & Composer Info */}
+          <View style={{ flex: 1, marginHorizontal: 10, backgroundColor: 'transparent' }}>
+            <View style={styles.titleRow}>
+              <Text style={[styles.headerTitle, { color: activeText }]} numberOfLines={1}>
+                {score.title}
+              </Text>
+              <View style={[styles.headerVoicingBadge, { backgroundColor: voicingBg }]}>
+                <Text style={[styles.headerVoicingText, { color: voicingTextColor }]}>
                   {score.voicing}
                 </Text>
-                {preferredVoicePart && (
-                  <Text style={[styles.partHighlight, { color: theme.tint }]}>
-                    Section: {preferredVoicePart}
-                  </Text>
-                )}
               </View>
-              <Text style={[styles.pageNumberText, { color: stageMode ? '#94A3B8' : '#64748B' }]}>
-                Page {currentPage} of {score.pageCount}
-              </Text>
+            </View>
+            <Text style={[styles.headerSub, { color: theme.subtext }]} numberOfLines={1}>
+              {score.composer}
+              {preferredVoicePart ? ` • Your Part: ${preferredVoicePart}` : ''}
+              {score.keySignature ? ` • ${score.keySignature}` : ''}
+            </Text>
+          </View>
+
+          {/* Reader Controls Toolbar */}
+          <View style={[styles.headerActions, { backgroundColor: 'transparent' }]}>
+            {/* Zoom Controls */}
+            <View style={[styles.zoomGroup, { backgroundColor: theme.surfaceSubtle }]}>
+              <TouchableOpacity
+                style={styles.zoomBtn}
+                onPress={handleZoomOut}
+                disabled={zoomScale <= 0.6}
+                accessibilityLabel="Zoom Out">
+                <Ionicons name="remove" size={16} color={activeText} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.zoomResetBtn}
+                onPress={handleResetZoom}
+                accessibilityLabel="Reset Zoom">
+                <Text style={[styles.zoomText, { color: activeText }]}>
+                  {Math.round(zoomScale * 100)}%
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.zoomBtn}
+                onPress={handleZoomIn}
+                disabled={zoomScale >= 2.5}
+                accessibilityLabel="Zoom In">
+                <Ionicons name="add" size={16} color={activeText} />
+              </TouchableOpacity>
             </View>
 
-            <Text
+            {/* Single Page vs Continuous Scroll Mode */}
+            <TouchableOpacity
               style={[
-                styles.sheetScoreTitle,
-                { color: stageMode ? '#F8FAFC' : '#0F172A' },
-              ]}>
-              {score.title}
-            </Text>
-            <Text
-              style={[
-                styles.sheetScoreComposer,
-                { color: stageMode ? '#CBD5E1' : '#475569' },
-              ]}>
-              {score.composer}
-            </Text>
+                styles.iconButton,
+                {
+                  backgroundColor: theme.surfaceSubtle,
+                },
+              ]}
+              accessibilityLabel={viewMode === 'single' ? 'Switch to Continuous Scroll' : 'Switch to Single Page'}
+              onPress={() => setViewMode(viewMode === 'single' ? 'scroll' : 'single')}>
+              <Ionicons
+                name={viewMode === 'single' ? 'document-text-outline' : 'albums-outline'}
+                size={18}
+                color={activeText}
+              />
+            </TouchableOpacity>
 
-            {score.tempo && (
-              <Text
-                style={[
-                  styles.sheetTempo,
-                  { color: stageMode ? '#E2E8F0' : '#334155' },
-                ]}>
-                Tempo: {score.tempo} • Key: {score.keySignature || 'N/A'}
-              </Text>
+            {/* Sepia Parchment Mode Toggle */}
+            <TouchableOpacity
+              style={[
+                styles.iconButton,
+                {
+                  backgroundColor: sepiaMode ? '#F59E0B22' : theme.surfaceSubtle,
+                  borderColor: sepiaMode ? '#D97706' : 'transparent',
+                  borderWidth: sepiaMode ? 1 : 0,
+                },
+              ]}
+              accessibilityLabel="Warm Parchment Tone"
+              onPress={() => {
+                setSepiaMode(!sepiaMode);
+                if (!sepiaMode) setStageMode(false);
+              }}>
+              <Ionicons
+                name={sepiaMode ? 'sunny' : 'sunny-outline'}
+                size={18}
+                color={sepiaMode ? '#D97706' : activeText}
+              />
+            </TouchableOpacity>
+
+            {/* Stage Mode Toggle */}
+            <TouchableOpacity
+              style={[
+                styles.iconButton,
+                {
+                  backgroundColor: stageMode ? '#F59E0B22' : theme.surfaceSubtle,
+                  borderColor: stageMode ? '#F59E0B' : 'transparent',
+                  borderWidth: stageMode ? 1 : 0,
+                },
+              ]}
+              accessibilityLabel="Dark Stage Mode (Concert Hall Inversion)"
+              onPress={() => {
+                setStageMode(!stageMode);
+                if (!stageMode) setSepiaMode(false);
+              }}>
+              <Ionicons
+                name={stageMode ? 'flash' : 'flash-outline'}
+                size={18}
+                color={stageMode ? '#F59E0B' : activeText}
+              />
+            </TouchableOpacity>
+
+            {/* Web Fullscreen Toggle */}
+            {Platform.OS === 'web' && (
+              <TouchableOpacity
+                style={[styles.iconButton, { backgroundColor: theme.surfaceSubtle }]}
+                accessibilityLabel={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+                onPress={handleToggleFullscreen}>
+                <Ionicons
+                  name={isFullscreen ? 'contract-outline' : 'expand-outline'}
+                  size={18}
+                  color={activeText}
+                />
+              </TouchableOpacity>
             )}
 
-            {/* Score Visual Notation Preview Staves */}
-            <View style={[styles.staffContainer, { backgroundColor: 'transparent' }]}>
-              {[1, 2, 3, 4].map(staffIndex => (
-                <View key={staffIndex} style={styles.grandStaff}>
-                  <View style={[styles.clefIndicator, { backgroundColor: 'transparent' }]}>
-                    <Text style={{ fontSize: 18, color: stageMode ? '#94A3B8' : '#334155' }}>
-                      𝄞
-                    </Text>
-                  </View>
-                  <View style={styles.fiveLines}>
-                    <View style={[styles.staffLine, { backgroundColor: stageMode ? '#475569' : '#CBD5E1' }]} />
-                    <View style={[styles.staffLine, { backgroundColor: stageMode ? '#475569' : '#CBD5E1' }]} />
-                    <View style={[styles.staffLine, { backgroundColor: stageMode ? '#475569' : '#CBD5E1' }]} />
-                    <View style={[styles.staffLine, { backgroundColor: stageMode ? '#475569' : '#CBD5E1' }]} />
-                    <View style={[styles.staffLine, { backgroundColor: stageMode ? '#475569' : '#CBD5E1' }]} />
-                  </View>
-                </View>
-              ))}
-            </View>
+            {/* Share / Open External (forScore) */}
+            <TouchableOpacity
+              style={[styles.iconButton, { backgroundColor: theme.surfaceSubtle }]}
+              accessibilityLabel="Share / Export PDF"
+              onPress={handleShare}>
+              <Ionicons name="share-outline" size={18} color={activeText} />
+            </TouchableOpacity>
 
-            {/* Simulated Lyrics and Music Notes Preview */}
-            <View
-              style={[
-                styles.lyricsContainer,
-                {
-                  backgroundColor: stageMode ? '#161F30' : '#F8FAFC',
-                  borderColor: stageMode ? '#243248' : '#E2E8F0',
-                },
-              ]}>
-              <Text style={[styles.lyricsLabel, { color: theme.tint }]}>REHEARSAL VOCAL TEXT</Text>
-              <Text
-                style={[
-                  styles.lyricsText,
-                  { color: stageMode ? '#E2E8F0' : '#1E293B' },
-                ]}>
-                {score.notes || 'Full masterwork score loaded into local cache for performance.'}
-              </Text>
-            </View>
-
-            {/* Sheet Footer Badge */}
-            <View style={[styles.sheetFooterBadge, { backgroundColor: 'transparent' }]}>
-              <Ionicons name="checkmark-circle" size={14} color={Colors.status.completed} />
-              <Text style={[styles.sheetFooterText, { color: Colors.status.completed }]}>
-                Downloaded Locally • Offline Verified
-              </Text>
-            </View>
+            {/* Favorite Toggle */}
+            <TouchableOpacity
+              style={[styles.iconButton, { backgroundColor: theme.surfaceSubtle }]}
+              accessibilityLabel="Favorite Score"
+              onPress={() => toggleFavorite(score.id)}>
+              <Ionicons
+                name={score.isFavorite ? 'star' : 'star-outline'}
+                size={18}
+                color={score.isFavorite ? '#F59E0B' : activeText}
+              />
+            </TouchableOpacity>
           </View>
-        </ScrollView>
-
-        {/* Page Turn Floating Controls */}
-        <View style={[styles.pageControls, { backgroundColor: activeCard, borderColor: activeBorder }]}>
-          <TouchableOpacity
-            style={[styles.pageBtn, { opacity: currentPage > 1 ? 1 : 0.3 }]}
-            disabled={currentPage <= 1}
-            onPress={() => setCurrentPage(prev => Math.max(1, prev - 1))}>
-            <Ionicons name="chevron-back" size={20} color={activeText} />
-            <Text style={[styles.pageBtnText, { color: activeText }]}>Previous</Text>
-          </TouchableOpacity>
-
-          <View style={[styles.pageCounterPill, { backgroundColor: theme.surfaceSubtle }]}>
-            <Text style={[styles.pageCounterText, { color: activeText }]}>
-              {currentPage} / {score.pageCount}
-            </Text>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.pageBtn, { opacity: currentPage < score.pageCount ? 1 : 0.3 }]}
-            disabled={currentPage >= score.pageCount}
-            onPress={() => setCurrentPage(prev => Math.min(score.pageCount, prev + 1))}>
-            <Text style={[styles.pageBtnText, { color: activeText }]}>Next</Text>
-            <Ionicons name="chevron-forward" size={20} color={activeText} />
-          </TouchableOpacity>
         </View>
+      )}
+
+      {/* Main Full-Featured PDF Viewer Canvas / Reader */}
+      <View style={[styles.viewerContainer, { backgroundColor: activeBg }]}>
+        <PdfViewer
+          sourceUrl={score.sourceUrl}
+          localUri={resolvedLocalUri}
+          title={score.title}
+          composer={score.composer}
+          voicing={score.voicing}
+          notes={score.notes}
+          initialPage={currentPage}
+          stageMode={stageMode}
+          sepiaMode={sepiaMode}
+          viewMode={viewMode}
+          zoomScale={zoomScale}
+          onPageChange={(p, total) => {
+            setCurrentPage(p);
+            setTotalPages(total);
+          }}
+          onLoadSuccess={(total) => {
+            setTotalPages(total);
+          }}
+          onError={(err) => {
+            console.warn('ScoreViewer PDF notice:', err);
+          }}
+          onToggleControls={() => {
+            setShowControls((prev) => !prev);
+          }}
+        />
+
+        {/* Page Turn Floating Controls (Single Page Mode) */}
+        {viewMode === 'single' && (
+          <View
+            style={[
+              styles.pageControls,
+              {
+                backgroundColor: activeCard,
+                borderColor: activeBorder,
+              },
+            ]}>
+            <TouchableOpacity
+              style={[styles.pageBtn, { opacity: currentPage > 1 ? 1 : 0.3 }]}
+              disabled={currentPage <= 1}
+              onPress={handlePrevPage}
+              accessibilityLabel="Previous Page (Left Arrow / Foot Pedal)">
+              <Ionicons name="chevron-back" size={20} color={activeText} />
+              <Text style={[styles.pageBtnText, { color: activeText }]}>Prev</Text>
+            </TouchableOpacity>
+
+            <View style={[styles.pageCounterPill, { backgroundColor: theme.surfaceSubtle }]}>
+              <Text style={[styles.pageCounterText, { color: activeText }]}>
+                {currentPage} / {totalPages}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.pageBtn, { opacity: currentPage < totalPages ? 1 : 0.3 }]}
+              disabled={currentPage >= totalPages}
+              onPress={handleNextPage}
+              accessibilityLabel="Next Page (Right Arrow / Foot Pedal)">
+              <Text style={[styles.pageBtnText, { color: activeText }]}>Next</Text>
+              <Ionicons name="chevron-forward" size={20} color={activeText} />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       {/* Collapsible Conductor Notes & Metadata Drawer */}
@@ -318,8 +417,26 @@ export default function ScoreViewerScreen() {
               </View>
             )}
 
+            <View style={styles.metadataGrid}>
+              {score.tempo && (
+                <Text style={[styles.metadataItem, { color: theme.subtext }]}>
+                  Tempo: <Text style={{ color: activeText, fontWeight: '600' }}>{score.tempo}</Text>
+                </Text>
+              )}
+              {score.keySignature && (
+                <Text style={[styles.metadataItem, { color: theme.subtext }]}>
+                  Key: <Text style={{ color: activeText, fontWeight: '600' }}>{score.keySignature}</Text>
+                </Text>
+              )}
+              {score.duration && (
+                <Text style={[styles.metadataItem, { color: theme.subtext }]}>
+                  Duration: <Text style={{ color: activeText, fontWeight: '600' }}>{score.duration}</Text>
+                </Text>
+              )}
+            </View>
+
             <View style={[styles.tagsRow, { backgroundColor: 'transparent' }]}>
-              {score.tags.map(tag => (
+              {score.tags.map((tag) => (
                 <View
                   key={tag}
                   style={[styles.tagPill, { backgroundColor: theme.surfaceSubtle }]}>
@@ -341,148 +458,76 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
+    zIndex: 10,
   },
-  iconButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
+  titleRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'transparent',
   },
   headerTitle: {
     fontSize: 15,
     fontWeight: '700',
   },
+  headerVoicingBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  headerVoicingText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
   headerSub: {
-    fontSize: 12,
+    fontSize: 11,
+    marginTop: 2,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  zoomBtn: {
+    width: 28,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomResetBtn: {
+    paddingHorizontal: 6,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   viewerContainer: {
     flex: 1,
-  },
-  sheetScroll: {
-    padding: 16,
-    alignItems: 'center',
-  },
-  sheetPage: {
-    width: '100%',
-    maxWidth: 600,
-    minHeight: 520,
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 20,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  pageHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(150,150,150,0.2)',
-    paddingBottom: 8,
-  },
-  pageHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  scorePageVoicing: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  partHighlight: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  pageNumberText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  sheetScoreTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    textAlign: 'center',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  sheetScoreComposer: {
-    fontSize: 14,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  sheetTempo: {
-    fontSize: 12,
-    fontWeight: '500',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  staffContainer: {
-    gap: 16,
-    marginVertical: 14,
-  },
-  grandStaff: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  clefIndicator: {
-    width: 24,
-    alignItems: 'center',
-  },
-  fiveLines: {
-    flex: 1,
-    gap: 5,
-    paddingVertical: 4,
-  },
-  staffLine: {
-    height: 1.5,
-    width: '100%',
-    borderRadius: 1,
-  },
-  lyricsContainer: {
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginTop: 16,
-  },
-  lyricsLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    marginBottom: 4,
-  },
-  lyricsText: {
-    fontSize: 13,
-    lineHeight: 20,
-    fontStyle: 'italic',
-  },
-  sheetFooterBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 20,
-  },
-  sheetFooterText: {
-    fontSize: 11,
-    fontWeight: '600',
+    position: 'relative',
+    overflow: 'hidden',
   },
   pageControls: {
     position: 'absolute',
-    bottom: 12,
+    bottom: 16,
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
@@ -491,11 +536,12 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
-    gap: 14,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
+    gap: 12,
+    zIndex: 20,
   },
   pageBtn: {
     flexDirection: 'row',
@@ -507,7 +553,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   pageCounterPill: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
   },
@@ -518,8 +564,9 @@ const styles = StyleSheet.create({
   drawer: {
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 16,
+    paddingTop: 6,
+    paddingBottom: 12,
+    zIndex: 15,
   },
   drawerHandle: {
     alignItems: 'center',
@@ -528,7 +575,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    marginBottom: 8,
+    marginBottom: 6,
     opacity: 0.4,
   },
   drawerTitleRow: {
@@ -548,11 +595,11 @@ const styles = StyleSheet.create({
   },
   drawerLabel: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
   },
   drawerContent: {
-    marginTop: 12,
+    marginTop: 10,
     gap: 8,
   },
   noteBox: {
@@ -560,12 +607,21 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 8,
     padding: 10,
-    borderRadius: 10,
+    borderRadius: 8,
   },
   noteText: {
     flex: 1,
     fontSize: 12,
     lineHeight: 18,
+  },
+  metadataGrid: {
+    flexDirection: 'row',
+    gap: 16,
+    backgroundColor: 'transparent',
+    marginTop: 2,
+  },
+  metadataItem: {
+    fontSize: 11,
   },
   tagsRow: {
     flexDirection: 'row',
@@ -574,7 +630,7 @@ const styles = StyleSheet.create({
   },
   tagPill: {
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
     borderRadius: 6,
   },
   tagText: {
@@ -590,11 +646,19 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     marginTop: 12,
-    marginBottom: 16,
+    marginBottom: 6,
+  },
+  notFoundSub: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 20,
+    maxWidth: 300,
   },
   backButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: 'rgba(13, 116, 206, 0.1)',
   },
   backButtonText: {
     fontSize: 14,

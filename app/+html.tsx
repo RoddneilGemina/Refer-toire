@@ -21,7 +21,17 @@ export default function Root({ children }: { children: ReactNode }) {
 
         {/* Using raw CSS styles as an escape-hatch to ensure the background color never flickers in dark-mode. */}
         <style dangerouslySetInnerHTML={{ __html: responsiveBackground }} />
-        {/* Add any additional <head> elements that you want globally available on web... */}
+        {/* Mozilla PDF.js for high-fidelity sheet music rendering on Web */}
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if (window.pdfjsLib) {
+                window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+              }
+            `,
+          }}
+        />
       </head>
       <body>{children}</body>
     </html>

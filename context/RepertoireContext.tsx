@@ -22,6 +22,7 @@ interface RepertoireContextValue {
   isSyncing: boolean;
   syncProgress: SyncProgress | null;
   scores: ScoreItem[];
+  localUris: Record<string, string>;
   filteredAndSortedScores: ScoreItem[];
   searchQuery: string;
   setSearchQuery: (q: string) => void;
@@ -289,6 +290,7 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
         isSyncing,
         syncProgress,
         scores,
+        localUris,
         filteredAndSortedScores,
         searchQuery,
         setSearchQuery,
