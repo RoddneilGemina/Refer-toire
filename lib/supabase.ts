@@ -4,8 +4,7 @@ import { Platform } from 'react-native';
 
 const supabaseUrl =
   process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://ctfxbeltcmmsvagecvyr.supabase.co';
-const supabaseAnonKey =
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '';
 
 const isWeb = Platform.OS === 'web';
 const isServer = isWeb && typeof window === 'undefined';
