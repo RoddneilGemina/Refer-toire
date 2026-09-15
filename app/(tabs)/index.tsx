@@ -16,6 +16,7 @@ import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
 import { ScoreItem, Voicing, LiturgicalSeason } from '@/types/repertoire';
 import { SORT_OPTIONS } from '@/utils/sorting';
+import UploadScoreModal from '@/components/UploadScoreModal';
 
 const VOICING_FILTERS: Array<Voicing | 'ALL'> = ['ALL', 'SATB', 'SSAA', 'TTBB', 'SAB'];
 const SEASON_FILTERS: Array<LiturgicalSeason | 'ALL'> = ['ALL', 'Lent', 'Holy Week', 'Christmas', 'Concert', 'Evensong', 'General'];
@@ -25,6 +26,7 @@ export default function RepertoireLibraryScreen() {
   const theme = Colors[colorScheme];
   const {
     currentInstance,
+    userRole,
     isLoading,
     isSyncing,
     syncProgress,
@@ -40,10 +42,12 @@ export default function RepertoireLibraryScreen() {
     favoritesOnly,
     setFavoritesOnly,
     toggleFavorite,
+    uploadScore,
     reSyncAll,
   } = useRepertoire();
 
   const [showFilterDrawer, setShowFilterDrawer] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   // If no instance loaded, show welcome empty state
   if (!isLoading && !currentInstance) {
@@ -55,13 +59,13 @@ export default function RepertoireLibraryScreen() {
           </View>
           <Text style={[styles.emptyTitle, { color: theme.text }]}>No Choir Connected</Text>
           <Text style={[styles.emptyText, { color: theme.subtext }]}>
-            Sign in with your choir access code to automatically download and organize all sheet music PDFs.
+            Sign in with a choir access code or create a new ensemble repertoire group.
           </Text>
           <TouchableOpacity
             style={[styles.primaryButton, { backgroundColor: theme.tint }]}
             onPress={() => router.push('/login')}>
             <Ionicons name="key-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-            <Text style={styles.primaryButtonText}>Enter Access Code</Text>
+            <Text style={styles.primaryButtonText}>Join or Create Group</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -169,11 +173,27 @@ export default function RepertoireLibraryScreen() {
       {/* App & Choir Header */}
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <View style={{ flex: 1, backgroundColor: 'transparent' }}>
-          <Text style={[styles.choirName, { color: theme.text }]} numberOfLines={1}>
-            {currentInstance?.name || 'Refer-toire'}
-          </Text>
+          <View style={[styles.titleBadgeRow, { backgroundColor: 'transparent' }]}>
+            <Text style={[styles.choirName, { color: theme.text }]} numberOfLines={1}>
+              {currentInstance?.name || 'Refer-toire'}
+            </Text>
+            <View
+              style={[
+                styles.rolePill,
+                { backgroundColor: userRole === 'admin' ? theme.badgeBackground : theme.surfaceSubtle },
+              ]}>
+              <Text
+                style={[
+                  styles.rolePillText,
+                  { color: userRole === 'admin' ? theme.badgeText : theme.subtext },
+                ]}>
+                {userRole === 'admin' ? '👑 Admin' : '👤 Member'}
+              </Text>
+            </View>
+          </View>
+
           <Text style={[styles.choirSub, { color: theme.subtext }]}>
-            {currentInstance?.director} • {currentInstance?.scores.length ?? 0} Scores
+            {currentInstance?.director} • Code: {currentInstance?.code} • {currentInstance?.scores.length ?? 0} Scores
           </Text>
         </View>
 
@@ -233,9 +253,10 @@ export default function RepertoireLibraryScreen() {
           style={[
             styles.filterToggleBtn,
             {
-              backgroundColor: showFilterDrawer || favoritesOnly || voicingFilter !== 'ALL' || seasonFilter !== 'ALL'
-                ? theme.badgeBackground
-                : theme.surfaceSubtle,
+              backgroundColor:
+                showFilterDrawer || favoritesOnly || voicingFilter !== 'ALL' || seasonFilter !== 'ALL'
+                  ? theme.badgeBackground
+                  : theme.surfaceSubtle,
               borderColor: theme.border,
             },
           ]}
@@ -386,13 +407,48 @@ export default function RepertoireLibraryScreen() {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={[styles.emptyList, { backgroundColor: 'transparent' }]}>
-            <Ionicons name="search-outline" size={40} color={theme.subtext} />
-            <Text style={[styles.emptyListTitle, { color: theme.text }]}>No Scores Found</Text>
-            <Text style={[styles.emptyListSub, { color: theme.subtext }]}>
-              Try adjusting your search query or removing active filters.
+            <Ionicons name="musical-notes-outline" size={48} color={theme.subtext} />
+            <Text style={[styles.emptyListTitle, { color: theme.text }]}>
+              {currentInstance?.scores.length === 0
+                ? 'Repertoire is Currently Empty'
+                : 'No Matching Scores'}
             </Text>
+            <Text style={[styles.emptyListSub, { color: theme.subtext }]}>
+              {currentInstance?.scores.length === 0
+                ? userRole === 'admin'
+                  ? 'Your group is ready! As group director, tap below to upload the first sheet music PDF for your singers.'
+                  : 'The music director has not uploaded any scores to this repertoire yet.'
+                : 'Try adjusting your search query or removing active filters.'}
+            </Text>
+
+            {userRole === 'admin' && currentInstance?.scores.length === 0 && (
+              <TouchableOpacity
+                style={[styles.primaryButton, { backgroundColor: theme.tint, marginTop: 16 }]}
+                onPress={() => setShowUploadModal(true)}>
+                <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.primaryButtonText}>Upload First Score (PDF)</Text>
+              </TouchableOpacity>
+            )}
           </View>
         }
+      />
+
+      {/* Admin Floating Action Button (FAB) to Upload PDF */}
+      {userRole === 'admin' && (
+        <TouchableOpacity
+          style={[styles.fabButton, { backgroundColor: theme.tint }]}
+          onPress={() => setShowUploadModal(true)}
+          activeOpacity={0.8}>
+          <Ionicons name="add" size={24} color="#FFFFFF" />
+          <Text style={styles.fabText}>Upload PDF</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* PDF Upload Modal */}
+      <UploadScoreModal
+        visible={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onUpload={uploadScore}
       />
     </SafeAreaView>
   );
@@ -410,10 +466,24 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
+  titleBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   choirName: {
     fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0.3,
+  },
+  rolePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  rolePillText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   choirSub: {
     fontSize: 12,
@@ -526,7 +596,7 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 16,
     paddingTop: 8,
-    paddingBottom: 24,
+    paddingBottom: 80,
     gap: 12,
   },
   scoreCard: {
@@ -655,16 +725,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 48,
+    paddingHorizontal: 24,
   },
   emptyListTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
     marginTop: 12,
-    marginBottom: 4,
+    marginBottom: 6,
   },
   emptyListSub: {
     fontSize: 13,
     textAlign: 'center',
-    maxWidth: 240,
+    maxWidth: 280,
+    lineHeight: 18,
+  },
+  fabButton: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 28,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+    gap: 6,
+  },
+  fabText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

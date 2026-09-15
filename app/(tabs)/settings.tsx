@@ -6,6 +6,7 @@ import {
   Alert,
   ActivityIndicator,
   SafeAreaView,
+  Share,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,6 +15,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
 import { DownloadService } from '@/services/downloadService';
+import UploadScoreModal from '@/components/UploadScoreModal';
 
 const VOICE_SECTIONS = [
   { id: 'Soprano 1', label: 'Soprano 1' },
@@ -31,6 +33,7 @@ export default function SettingsScreen() {
   const theme = Colors[colorScheme];
   const {
     currentInstance,
+    userRole,
     scores,
     isSyncing,
     reSyncAll,
@@ -38,9 +41,11 @@ export default function SettingsScreen() {
     signOut,
     preferredVoicePart,
     setPreferredVoicePart,
+    uploadScore,
   } = useRepertoire();
 
   const [resyncing, setResyncing] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   const downloadedCount = scores.filter(s => s.downloadStatus === 'completed').length;
   const totalScores = scores.length;
@@ -51,6 +56,18 @@ export default function SettingsScreen() {
     setResyncing(true);
     await reSyncAll();
     setResyncing(false);
+  };
+
+  const handleShareCode = async () => {
+    if (!currentInstance) return;
+    try {
+      await Share.share({
+        title: `Join ${currentInstance.name} on Refer-toire`,
+        message: `Join our choir repertoire on the Refer-toire app! Use Choir Access Code: ${currentInstance.code} to download all our sheet music offline.`,
+      });
+    } catch {
+      // Ignored
+    }
   };
 
   const handleClearCache = () => {
@@ -93,12 +110,12 @@ export default function SettingsScreen() {
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
         <Text style={[styles.screenTitle, { color: theme.text }]}>Choir & Storage</Text>
         <Text style={[styles.screenSub, { color: theme.subtext }]}>
-          Manage offline storage, voice section, and ensemble settings
+          Manage offline storage, member codes, and ensemble permissions
         </Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Active Ensemble Card */}
+        {/* Active Ensemble & Role Card */}
         {currentInstance ? (
           <View
             style={[
@@ -106,13 +123,13 @@ export default function SettingsScreen() {
               { backgroundColor: theme.card, borderColor: theme.border },
             ]}>
             <View style={[styles.cardHeader, { backgroundColor: 'transparent' }]}>
-              <View style={[styles.badge, { backgroundColor: theme.badgeBackground }]}>
-                <Text style={[styles.badgeText, { color: theme.badgeText }]}>
-                  {currentInstance.code}
+              <View style={[styles.roleBadge, { backgroundColor: userRole === 'admin' ? theme.badgeBackground : theme.surfaceSubtle }]}>
+                <Text style={[styles.roleBadgeText, { color: userRole === 'admin' ? theme.badgeText : theme.subtext }]}>
+                  {userRole === 'admin' ? '👑 Group Director / Admin' : '👤 Ensemble Singer / Member'}
                 </Text>
               </View>
               <TouchableOpacity onPress={() => router.push('/login')}>
-                <Text style={[styles.switchLink, { color: theme.tint }]}>Switch Code</Text>
+                <Text style={[styles.switchLink, { color: theme.tint }]}>Switch Group</Text>
               </TouchableOpacity>
             </View>
 
@@ -130,19 +147,17 @@ export default function SettingsScreen() {
               </Text>
             </View>
 
-            {currentInstance.accompanist && (
-              <View style={[styles.infoRow, { backgroundColor: 'transparent' }]}>
-                <Text style={[styles.infoLabel, { color: theme.subtext }]}>Accompanist:</Text>
-                <Text style={[styles.infoValue, { color: theme.text }]}>
-                  {currentInstance.accompanist}
-                </Text>
-              </View>
-            )}
-
             <View style={[styles.infoRow, { backgroundColor: 'transparent' }]}>
               <Text style={[styles.infoLabel, { color: theme.subtext }]}>Season:</Text>
               <Text style={[styles.infoValue, { color: theme.text }]}>
                 {currentInstance.seasonName}
+              </Text>
+            </View>
+
+            <View style={[styles.infoRow, { backgroundColor: 'transparent' }]}>
+              <Text style={[styles.infoLabel, { color: theme.subtext }]}>Access Code:</Text>
+              <Text style={[styles.infoCodeValue, { color: theme.tint }]}>
+                {currentInstance.code}
               </Text>
             </View>
           </View>
@@ -156,9 +171,50 @@ export default function SettingsScreen() {
             <Ionicons name="key-outline" size={32} color={theme.tint} style={{ marginBottom: 8 }} />
             <Text style={[styles.choirTitle, { color: theme.text }]}>No Choir Connected</Text>
             <Text style={[styles.choirSubtext, { color: theme.subtext, textAlign: 'center' }]}>
-              Tap to enter an access code and load your ensemble
+              Tap to enter an access code or create a new choir group
             </Text>
           </TouchableOpacity>
+        )}
+
+        {/* ADMIN INVITE & UPLOAD BANNER */}
+        {userRole === 'admin' && currentInstance && (
+          <View
+            style={[
+              styles.adminBannerCard,
+              { backgroundColor: theme.badgeBackground, borderColor: theme.tint },
+            ]}>
+            <View style={[styles.adminBannerHeader, { backgroundColor: 'transparent' }]}>
+              <Ionicons name="megaphone" size={20} color={theme.tint} />
+              <Text style={[styles.adminBannerTitle, { color: theme.badgeText }]}>
+                Invite Singers to Your Repertoire
+              </Text>
+            </View>
+
+            <Text style={[styles.adminBannerText, { color: theme.badgeText }]}>
+              Give this code to your choir members. When they enter it in Refer-toire, all uploaded scores will sync to their phones automatically:
+            </Text>
+
+            <View style={[styles.codeDisplayBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.bigCodeText, { color: theme.tint }]}>
+                {currentInstance.code}
+              </Text>
+              <TouchableOpacity
+                style={[styles.shareCodeBtn, { backgroundColor: theme.tint }]}
+                onPress={handleShareCode}>
+                <Ionicons name="share-social-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.shareCodeBtnText}>Share Code</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.adminUploadBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
+              onPress={() => setShowUploadModal(true)}>
+              <Ionicons name="cloud-upload-outline" size={18} color={theme.tint} style={{ marginRight: 8 }} />
+              <Text style={[styles.adminUploadBtnText, { color: theme.text }]}>
+                Upload New Sheet Music (PDF)
+              </Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* Singer Voice Part Preference */}
@@ -297,6 +353,13 @@ export default function SettingsScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* Upload Modal (accessible by admin from settings as well) */}
+      <UploadScoreModal
+        visible={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        onUpload={uploadScore}
+      />
     </SafeAreaView>
   );
 }
@@ -333,12 +396,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 8,
   },
-  badge: {
+  roleBadge: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
   },
-  badgeText: {
+  roleBadgeText: {
     fontSize: 12,
     fontWeight: '700',
   },
@@ -366,6 +429,70 @@ const styles = StyleSheet.create({
   infoValue: {
     fontSize: 13,
     fontWeight: '600',
+  },
+  infoCodeValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  adminBannerCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 16,
+  },
+  adminBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  adminBannerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  adminBannerText: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  codeDisplayBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  bigCodeText: {
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  shareCodeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  shareCodeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  adminUploadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 11,
+  },
+  adminUploadBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   sectionTitle: {
     fontSize: 16,

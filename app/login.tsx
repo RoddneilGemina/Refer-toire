@@ -16,15 +16,27 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
 import { InstanceService } from '@/services/instanceService';
+import { DatabaseService } from '@/services/databaseService';
+
+type TabMode = 'join' | 'create';
 
 export default function LoginScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme];
-  const { signInWithCode, currentInstance } = useRepertoire();
+  const { signInWithCode, createGroup, currentInstance } = useRepertoire();
 
+  const [activeTab, setActiveTab] = useState<TabMode>('join');
+
+  // Join State
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Create Group State
+  const [ensembleName, setEnsembleName] = useState('');
+  const [directorName, setDirectorName] = useState('');
+  const [seasonName, setSeasonName] = useState('');
+  const [customCode, setCustomCode] = useState('');
 
   const demoInstances = InstanceService.getAvailableDemoInstances();
 
@@ -42,7 +54,6 @@ export default function LoginScreen() {
     setLoading(false);
 
     if (res.success) {
-      // Redirect to main repertoire list
       if (router.canGoBack()) {
         router.back();
       } else {
@@ -50,6 +61,47 @@ export default function LoginScreen() {
       }
     } else {
       setErrorMessage(res.error || 'Failed to connect to repertoire instance');
+    }
+  };
+
+  const handleCreateGroup = async () => {
+    if (!ensembleName.trim()) {
+      setErrorMessage('Please enter an ensemble name.');
+      return;
+    }
+    if (!directorName.trim()) {
+      setErrorMessage('Please enter the music director name.');
+      return;
+    }
+
+    setErrorMessage(null);
+    setLoading(true);
+
+    const res = await createGroup({
+      name: ensembleName.trim(),
+      director: directorName.trim(),
+      seasonName: seasonName.trim() || undefined,
+      customCode: customCode.trim() || undefined,
+    });
+
+    setLoading(false);
+
+    if (res.success) {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/(tabs)');
+      }
+    } else {
+      setErrorMessage(res.error || 'Failed to create group.');
+    }
+  };
+
+  const handleSuggestCode = () => {
+    if (ensembleName.trim()) {
+      setCustomCode(DatabaseService.generateUniqueCode(ensembleName));
+    } else {
+      setCustomCode(DatabaseService.generateUniqueCode());
     }
   };
 
@@ -62,7 +114,7 @@ export default function LoginScreen() {
           {/* Header & Logo */}
           <View style={[styles.headerSection, { backgroundColor: 'transparent' }]}>
             <View style={[styles.iconCircle, { backgroundColor: theme.surfaceSubtle }]}>
-              <Ionicons name="musical-notes" size={44} color={theme.tint} />
+              <Ionicons name="musical-notes" size={42} color={theme.tint} />
             </View>
             <Text style={[styles.title, { color: theme.text }]}>Refer-toire</Text>
             <Text style={[styles.subtitle, { color: theme.subtext }]}>
@@ -78,16 +130,16 @@ export default function LoginScreen() {
                 { backgroundColor: theme.card, borderColor: theme.border },
               ]}>
               <View style={[styles.currentCardHeader, { backgroundColor: 'transparent' }]}>
-                <Ionicons name="checkmark-circle" size={20} color={Colors.status.completed} />
+                <Ionicons name="checkmark-circle" size={18} color={Colors.status.completed} />
                 <Text style={[styles.currentCardTitle, { color: theme.text }]}>
-                  Currently Logged In
+                  Connected Ensemble
                 </Text>
               </View>
               <Text style={[styles.currentChoirName, { color: theme.tint }]}>
                 {currentInstance.name}
               </Text>
               <Text style={[styles.currentChoirCode, { color: theme.subtext }]}>
-                Code: {currentInstance.code} • {currentInstance.scores.length} scores
+                Access Code: {currentInstance.code} • {currentInstance.scores.length} scores
               </Text>
               <TouchableOpacity
                 style={[styles.returnButton, { backgroundColor: theme.surfaceSubtle }]}
@@ -99,101 +151,281 @@ export default function LoginScreen() {
             </View>
           )}
 
-          {/* Access Code Input */}
-          <View
-            style={[styles.inputCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Text style={[styles.inputLabel, { color: theme.text }]}>Choir Access Code</Text>
-            <Text style={[styles.inputHint, { color: theme.subtext }]}>
-              Provided by your choral director or music librarian
-            </Text>
-
-            <View style={[styles.inputRow, { borderColor: theme.border, backgroundColor: theme.surfaceSubtle }]}>
-              <Ionicons name="key-outline" size={20} color={theme.subtext} style={styles.inputIcon} />
-              <TextInput
-                style={[styles.inputField, { color: theme.text }]}
-                placeholder="e.g. CANTATE-2026"
-                placeholderTextColor={theme.subtext}
-                autoCapitalize="characters"
-                autoCorrect={false}
-                value={code}
-                onChangeText={t => {
-                  setCode(t.toUpperCase());
-                  setErrorMessage(null);
-                }}
-                onSubmitEditing={() => handleSignIn()}
-                editable={!loading}
+          {/* Mode Switcher Tabs */}
+          <View style={[styles.tabBar, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}>
+            <TouchableOpacity
+              style={[
+                styles.tabButton,
+                activeTab === 'join' && { backgroundColor: theme.card, shadowColor: '#000', elevation: 2 },
+              ]}
+              onPress={() => {
+                setActiveTab('join');
+                setErrorMessage(null);
+              }}>
+              <Ionicons
+                name="key-outline"
+                size={16}
+                color={activeTab === 'join' ? theme.tint : theme.subtext}
+                style={{ marginRight: 6 }}
               />
-              {code.length > 0 && (
-                <TouchableOpacity onPress={() => setCode('')} style={styles.clearBtn}>
-                  <Ionicons name="close-circle" size={18} color={theme.subtext} />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {errorMessage && (
-              <View style={[styles.errorRow, { backgroundColor: 'transparent' }]}>
-                <Ionicons name="alert-circle" size={16} color={Colors.status.failed} />
-                <Text style={styles.errorText}>{errorMessage}</Text>
-              </View>
-            )}
+              <Text
+                style={[
+                  styles.tabButtonText,
+                  { color: activeTab === 'join' ? theme.text : theme.subtext },
+                ]}>
+                Enter Code
+              </Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={[
-                styles.submitButton,
-                { backgroundColor: theme.tint, opacity: loading ? 0.7 : 1 },
+                styles.tabButton,
+                activeTab === 'create' && { backgroundColor: theme.card, shadowColor: '#000', elevation: 2 },
               ]}
-              onPress={() => handleSignIn()}
-              disabled={loading}>
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <Ionicons name="cloud-download-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                  <Text style={styles.submitButtonText}>Download & Sync Repertoire</Text>
-                </>
-              )}
+              onPress={() => {
+                setActiveTab('create');
+                setErrorMessage(null);
+              }}>
+              <Ionicons
+                name="add-circle-outline"
+                size={16}
+                color={activeTab === 'create' ? theme.tint : theme.subtext}
+                style={{ marginRight: 6 }}
+              />
+              <Text
+                style={[
+                  styles.tabButtonText,
+                  { color: activeTab === 'create' ? theme.text : theme.subtext },
+                ]}>
+                Create Group
+              </Text>
             </TouchableOpacity>
           </View>
 
-          {/* Demo Instances Section */}
-          <View style={[styles.demoSection, { backgroundColor: 'transparent' }]}>
-            <Text style={[styles.demoSectionTitle, { color: theme.subtext }]}>
-              OR SELECT A DEMO ENSEMBLE
-            </Text>
+          {/* JOIN GROUP TAB CONTENT */}
+          {activeTab === 'join' ? (
+            <>
+              {/* Access Code Input */}
+              <View
+                style={[styles.inputCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                <Text style={[styles.inputLabel, { color: theme.text }]}>Choir Access Code</Text>
+                <Text style={[styles.inputHint, { color: theme.subtext }]}>
+                  Enter the unique code for your choir to link and sync all scores offline
+                </Text>
 
-            {demoInstances.map(demo => (
-              <TouchableOpacity
-                key={demo.code}
-                style={[
-                  styles.demoCard,
-                  { backgroundColor: theme.card, borderColor: theme.border },
-                ]}
-                onPress={() => {
-                  setCode(demo.code);
-                  handleSignIn(demo.code);
-                }}
-                disabled={loading}>
-                <View style={[styles.demoCardLeft, { backgroundColor: 'transparent' }]}>
-                  <View style={[styles.demoBadge, { backgroundColor: theme.badgeBackground }]}>
-                    <Text style={[styles.demoBadgeText, { color: theme.badgeText }]}>
-                      {demo.code}
-                    </Text>
+                <View
+                  style={[
+                    styles.inputRow,
+                    { borderColor: theme.border, backgroundColor: theme.surfaceSubtle },
+                  ]}>
+                  <Ionicons name="key-outline" size={20} color={theme.subtext} style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.inputField, { color: theme.text }]}
+                    placeholder="e.g. CANTATE-2026"
+                    placeholderTextColor={theme.subtext}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    value={code}
+                    onChangeText={t => {
+                      setCode(t.toUpperCase());
+                      setErrorMessage(null);
+                    }}
+                    onSubmitEditing={() => handleSignIn()}
+                    editable={!loading}
+                  />
+                  {code.length > 0 && (
+                    <TouchableOpacity onPress={() => setCode('')} style={styles.clearBtn}>
+                      <Ionicons name="close-circle" size={18} color={theme.subtext} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {errorMessage && (
+                  <View style={[styles.errorRow, { backgroundColor: 'transparent' }]}>
+                    <Ionicons name="alert-circle" size={16} color={Colors.status.failed} />
+                    <Text style={styles.errorText}>{errorMessage}</Text>
                   </View>
-                  <Text style={[styles.demoName, { color: theme.text }]}>{demo.name}</Text>
-                  <Text style={[styles.demoScoreCount, { color: theme.subtext }]}>
-                    {demo.scoreCount} scores ready for offline sync
+                )}
+
+                <TouchableOpacity
+                  style={[
+                    styles.submitButton,
+                    { backgroundColor: theme.tint, opacity: loading ? 0.7 : 1 },
+                  ]}
+                  onPress={() => handleSignIn()}
+                  disabled={loading}>
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name="cloud-download-outline"
+                        size={20}
+                        color="#FFFFFF"
+                        style={{ marginRight: 8 }}
+                      />
+                      <Text style={styles.submitButtonText}>Link & Sync Repertoire</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              {/* Demo Instances Section */}
+              <View style={[styles.demoSection, { backgroundColor: 'transparent' }]}>
+                <Text style={[styles.demoSectionTitle, { color: theme.subtext }]}>
+                  OR JOIN A DEMO ENSEMBLE
+                </Text>
+
+                {demoInstances.map(demo => (
+                  <TouchableOpacity
+                    key={demo.code}
+                    style={[
+                      styles.demoCard,
+                      { backgroundColor: theme.card, borderColor: theme.border },
+                    ]}
+                    onPress={() => {
+                      setCode(demo.code);
+                      handleSignIn(demo.code);
+                    }}
+                    disabled={loading}>
+                    <View style={[styles.demoCardLeft, { backgroundColor: 'transparent' }]}>
+                      <View style={[styles.demoBadge, { backgroundColor: theme.badgeBackground }]}>
+                        <Text style={[styles.demoBadgeText, { color: theme.badgeText }]}>
+                          {demo.code}
+                        </Text>
+                      </View>
+                      <Text style={[styles.demoName, { color: theme.text }]}>{demo.name}</Text>
+                      <Text style={[styles.demoScoreCount, { color: theme.subtext }]}>
+                        {demo.scoreCount} scores ready for offline sync
+                      </Text>
+                    </View>
+                    <Ionicons name="arrow-forward" size={18} color={theme.tint} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          ) : (
+            /* CREATE GROUP TAB CONTENT */
+            <View
+              style={[styles.inputCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <View style={[styles.adminBadgeRow, { backgroundColor: 'transparent' }]}>
+                <View style={[styles.crownBadge, { backgroundColor: theme.badgeBackground }]}>
+                  <Text style={[styles.crownBadgeText, { color: theme.badgeText }]}>
+                    👑 Group Creator / Admin
                   </Text>
                 </View>
-                <Ionicons name="arrow-forward" size={18} color={theme.tint} />
+              </View>
+              <Text style={[styles.inputLabel, { color: theme.text }]}>New Choir Repertoire</Text>
+              <Text style={[styles.inputHint, { color: theme.subtext }]}>
+                Initially, your repertoire will be empty. As the group admin, you can upload sheet music PDFs and invite members using your unique code.
+              </Text>
+
+              {/* Ensemble Name */}
+              <Text style={[styles.fieldLabel, { color: theme.text }]}>Ensemble Name *</Text>
+              <TextInput
+                style={[
+                  styles.formInput,
+                  { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text },
+                ]}
+                placeholder="e.g. St. Cecilia Chamber Choir"
+                placeholderTextColor={theme.subtext}
+                value={ensembleName}
+                onChangeText={t => {
+                  setEnsembleName(t);
+                  setErrorMessage(null);
+                }}
+              />
+
+              {/* Director Name */}
+              <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 12 }]}>
+                Music Director *
+              </Text>
+              <TextInput
+                style={[
+                  styles.formInput,
+                  { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text },
+                ]}
+                placeholder="e.g. Dr. Julian Vance"
+                placeholderTextColor={theme.subtext}
+                value={directorName}
+                onChangeText={t => {
+                  setDirectorName(t);
+                  setErrorMessage(null);
+                }}
+              />
+
+              {/* Season / Year */}
+              <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 12 }]}>
+                Season / Program Cycle
+              </Text>
+              <TextInput
+                style={[
+                  styles.formInput,
+                  { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text },
+                ]}
+                placeholder="e.g. 2026 Masterworks Cycle"
+                placeholderTextColor={theme.subtext}
+                value={seasonName}
+                onChangeText={setSeasonName}
+              />
+
+              {/* Unique Access Code */}
+              <View style={[styles.codeHeaderRow, { backgroundColor: 'transparent', marginTop: 12 }]}>
+                <Text style={[styles.fieldLabel, { color: theme.text }]}>Unique Choir Access Code</Text>
+                <TouchableOpacity onPress={handleSuggestCode}>
+                  <Text style={[styles.suggestLink, { color: theme.tint }]}>Auto-Generate</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TextInput
+                style={[
+                  styles.formInput,
+                  {
+                    backgroundColor: theme.surfaceSubtle,
+                    borderColor: theme.border,
+                    color: theme.text,
+                    fontWeight: '700',
+                    letterSpacing: 1,
+                  },
+                ]}
+                placeholder="e.g. CECILIA-2026 (or auto-generated)"
+                placeholderTextColor={theme.subtext}
+                autoCapitalize="characters"
+                value={customCode}
+                onChangeText={t => setCustomCode(t.toUpperCase())}
+              />
+
+              {errorMessage && (
+                <View style={[styles.errorRow, { backgroundColor: 'transparent', marginTop: 12 }]}>
+                  <Ionicons name="alert-circle" size={16} color={Colors.status.failed} />
+                  <Text style={styles.errorText}>{errorMessage}</Text>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[
+                  styles.submitButton,
+                  { backgroundColor: theme.tint, opacity: loading ? 0.7 : 1, marginTop: 16 },
+                ]}
+                onPress={handleCreateGroup}
+                disabled={loading}>
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="add-circle-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    <Text style={styles.submitButtonText}>Create Group & Open Library</Text>
+                  </>
+                )}
               </TouchableOpacity>
-            ))}
-          </View>
+            </View>
+          )}
 
           {/* Offline Rehearsal Notice */}
           <View style={[styles.footerNotice, { backgroundColor: 'transparent' }]}>
             <Ionicons name="shield-checkmark-outline" size={18} color={theme.subtext} />
             <Text style={[styles.footerNoticeText, { color: theme.subtext }]}>
-              Once synchronized, all PDF sheet music is stored locally on your device for reliable access in churches and concert halls without WiFi.
+              All sheet music PDFs are synchronized directly into device storage, keeping scores accessible during rehearsals and concerts without WiFi.
             </Text>
           </View>
         </ScrollView>
@@ -211,79 +443,111 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 36,
+    paddingTop: 28,
     paddingBottom: 40,
   },
   headerSection: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 20,
   },
   iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 76,
+    height: 76,
+    borderRadius: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '700',
     letterSpacing: 0.5,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 18,
     maxWidth: 280,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 4,
+    marginBottom: 20,
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  tabButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   currentCard: {
     borderRadius: 16,
-    padding: 16,
+    padding: 14,
     borderWidth: 1,
-    marginBottom: 20,
+    marginBottom: 18,
   },
   currentCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   currentCardTitle: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   currentChoirName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   currentChoirCode: {
-    fontSize: 13,
-    marginBottom: 12,
+    fontSize: 12,
+    marginBottom: 10,
   },
   returnButton: {
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
     alignItems: 'center',
   },
   returnButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   inputCard: {
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
-    marginBottom: 28,
+    marginBottom: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 10,
     elevation: 2,
+  },
+  adminBadgeRow: {
+    marginBottom: 12,
+  },
+  crownBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  crownBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   inputLabel: {
     fontSize: 16,
@@ -292,7 +556,29 @@ const styles = StyleSheet.create({
   },
   inputHint: {
     fontSize: 13,
+    lineHeight: 18,
     marginBottom: 16,
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  codeHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  suggestLink: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  formInput: {
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    fontSize: 14,
   },
   inputRow: {
     flexDirection: 'row',
@@ -335,24 +621,24 @@ const styles = StyleSheet.create({
   },
   submitButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
   },
   demoSection: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   demoSectionTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1,
-    marginBottom: 12,
+    marginBottom: 10,
     paddingLeft: 4,
   },
   demoCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
+    padding: 14,
     borderRadius: 14,
     borderWidth: 1,
     marginBottom: 10,
@@ -374,7 +660,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   demoName: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     marginBottom: 2,
   },

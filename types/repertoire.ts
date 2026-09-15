@@ -25,6 +25,8 @@ export type LiturgicalSeason =
 
 export type DownloadStatus = 'idle' | 'downloading' | 'completed' | 'failed';
 
+export type UserRole = 'admin' | 'member';
+
 export interface ScoreItem {
   id: string;
   title: string;
@@ -37,7 +39,7 @@ export interface ScoreItem {
   tempo?: string;
   duration?: string; // e.g. "3:45"
   pageCount: number;
-  sourceUrl: string; // Remote PDF URL
+  sourceUrl: string; // Remote PDF URL or local file URI
   localUri?: string; // Local file:// URI once downloaded
   fileSize: number; // in bytes
   downloadStatus: DownloadStatus;
@@ -64,9 +66,34 @@ export interface RepertoireInstance {
   accompanist?: string;
   organization?: string;
   seasonName: string;
+  adminKey?: string; // Key / token identifying group creator / admin
+  isCustom?: boolean;
+  createdDate?: string;
   scores: ScoreItem[];
   setlists: Setlist[];
   lastUpdated: string;
+}
+
+export interface CreateGroupParams {
+  name: string;
+  director: string;
+  subtitle?: string;
+  seasonName?: string;
+  customCode?: string;
+}
+
+export interface UploadScoreData {
+  title: string;
+  composer: string;
+  arranger?: string;
+  voicing: Voicing;
+  season: LiturgicalSeason;
+  keySignature?: string;
+  tempo?: string;
+  duration?: string;
+  pageCount?: number;
+  notes?: string;
+  tags?: string[];
 }
 
 export interface SyncProgress {

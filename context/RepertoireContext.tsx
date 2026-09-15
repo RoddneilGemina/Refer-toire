@@ -6,14 +6,18 @@ import {
   SortOption,
   Voicing,
   LiturgicalSeason,
+  UserRole,
+  CreateGroupParams,
+  UploadScoreData,
 } from '@/types/repertoire';
-import { InstanceService } from '@/services/instanceService';
+import { DatabaseService } from '@/services/databaseService';
 import { DownloadService } from '@/services/downloadService';
 import { StorageService } from '@/services/storageService';
 import { SORT_OPTIONS, sortScores, filterScores } from '@/utils/sorting';
 
 interface RepertoireContextValue {
   currentInstance: RepertoireInstance | null;
+  userRole: UserRole;
   isLoading: boolean;
   isSyncing: boolean;
   syncProgress: SyncProgress | null;
@@ -32,6 +36,11 @@ interface RepertoireContextValue {
   preferredVoicePart: string | null;
   setPreferredVoicePart: (part: string | null) => Promise<void>;
   signInWithCode: (code: string) => Promise<{ success: boolean; error?: string }>;
+  createGroup: (params: CreateGroupParams) => Promise<{ success: boolean; code?: string; error?: string }>;
+  uploadScore: (
+    scoreData: UploadScoreData,
+    file: { uri: string; name: string; size?: number }
+  ) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
   reSyncAll: () => Promise<void>;
   toggleFavorite: (scoreId: string) => Promise<void>;
@@ -42,6 +51,7 @@ const RepertoireContext = createContext<RepertoireContextValue | undefined>(unde
 
 export function RepertoireProvider({ children }: { children: React.ReactNode }) {
   const [currentInstance, setCurrentInstance] = useState<RepertoireInstance | null>(null);
+  const [userRole, setUserRole] = useState<UserRole>('member');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
@@ -89,6 +99,9 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
         setPreferredVoicePartState(preferredPart);
 
         if (activeCode) {
+          const role = await StorageService.getUserRole(activeCode);
+          setUserRole(role);
+
           // Check local cache first for instant offline startup
           const cached = await StorageService.getCachedInstance(activeCode);
           const uris = await StorageService.getLocalScoreUris(activeCode);
@@ -101,11 +114,10 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
           }
 
           // Fetch fresh instance in background
-          const fresh = await InstanceService.fetchInstance(activeCode);
+          const fresh = await DatabaseService.getGroupByCode(activeCode);
           if (fresh) {
             setCurrentInstance(fresh);
             await StorageService.saveCachedInstance(fresh);
-            // Download any new scores in background
             syncScoresForInstance(fresh);
           }
         }
@@ -118,16 +130,21 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
     initSession();
   }, [syncScoresForInstance]);
 
-  // Handle Login with Access Code
+  // Handle Login with Access Code (Links user to group and syncs)
   const signInWithCode = async (rawCode: string): Promise<{ success: boolean; error?: string }> => {
-    const instance = await InstanceService.fetchInstance(rawCode);
+    const instance = await DatabaseService.getGroupByCode(rawCode);
     if (!instance) {
-      return { success: false, error: 'Invalid choir code. Try demo code CANTATE-2026 or CHORALE-LENT' };
+      return { success: false, error: 'Invalid choir code. Check the code or try demo CANTATE-2026.' };
     }
 
     try {
       await StorageService.setActiveInstanceCode(instance.code);
       await StorageService.saveCachedInstance(instance);
+
+      // Check stored role or default to member
+      const role = await StorageService.getUserRole(instance.code);
+      setUserRole(role);
+
       const uris = await StorageService.getLocalScoreUris(instance.code);
       const favs = await StorageService.getFavorites(instance.code);
 
@@ -140,7 +157,58 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
 
       return { success: true };
     } catch (e) {
-      return { success: false, error: 'Failed to initialize local choir storage' };
+      return { success: false, error: 'Failed to connect and sync repertoire.' };
+    }
+  };
+
+  // Create a new Refer-toire Group (initially empty, user is admin)
+  const createGroup = async (
+    params: CreateGroupParams
+  ): Promise<{ success: boolean; code?: string; error?: string }> => {
+    try {
+      const { instance, role } = await DatabaseService.createGroup(params);
+
+      await StorageService.setActiveInstanceCode(instance.code);
+      setCurrentInstance(instance);
+      setUserRole(role);
+      setLocalUris({});
+      setFavorites([]);
+
+      return { success: true, code: instance.code };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not create new group.' };
+    }
+  };
+
+  // Upload a new PDF Score (available to admins)
+  const uploadScore = async (
+    scoreData: UploadScoreData,
+    file: { uri: string; name: string; size?: number }
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!currentInstance) {
+      return { success: false, error: 'No active choir group selected.' };
+    }
+
+    try {
+      const createdScore = await DatabaseService.uploadScoreToGroup(currentInstance.code, scoreData, file);
+
+      // Update local state immediately
+      setCurrentInstance(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          scores: [createdScore, ...prev.scores],
+        };
+      });
+
+      setLocalUris(prev => ({
+        ...prev,
+        [createdScore.id]: createdScore.localUri || createdScore.sourceUrl,
+      }));
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to upload score.' };
     }
   };
 
@@ -148,6 +216,7 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
   const signOut = async () => {
     await StorageService.setActiveInstanceCode(null);
     setCurrentInstance(null);
+    setUserRole('member');
     setLocalUris({});
     setFavorites([]);
   };
@@ -187,7 +256,7 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
       const isDownloaded = Boolean(localUri);
       return {
         ...s,
-        localUri,
+        localUri: localUri || s.localUri,
         downloadStatus: isDownloaded ? 'completed' : isSyncing ? 'downloading' : 'idle',
         isFavorite: favorites.includes(s.id),
       };
@@ -204,6 +273,7 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
     <RepertoireContext.Provider
       value={{
         currentInstance,
+        userRole,
         isLoading,
         isSyncing,
         syncProgress,
@@ -222,6 +292,8 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
         preferredVoicePart,
         setPreferredVoicePart,
         signInWithCode,
+        createGroup,
+        uploadScore,
         signOut,
         reSyncAll,
         toggleFavorite,

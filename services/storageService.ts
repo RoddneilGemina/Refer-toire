@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { RepertoireInstance } from '@/types/repertoire';
+import { RepertoireInstance, UserRole } from '@/types/repertoire';
 
 const STORAGE_KEYS = {
   ACTIVE_CODE: '@refertoire:active_instance_code',
@@ -7,6 +7,8 @@ const STORAGE_KEYS = {
   DOWNLOADED_URIS_PREFIX: '@refertoire:uris:',
   FAVORITES_PREFIX: '@refertoire:favorites:',
   VOICE_PART: '@refertoire:voice_part',
+  USER_ROLE_PREFIX: '@refertoire:role:',
+  CUSTOM_INSTANCES: '@refertoire:custom_instances_list',
 };
 
 export class StorageService {
@@ -58,6 +60,62 @@ export class StorageService {
       return raw ? JSON.parse(raw) : null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * Get user role ('admin' | 'member') for a specific instance
+   */
+  static async getUserRole(instanceCode: string): Promise<UserRole> {
+    try {
+      const key = `${STORAGE_KEYS.USER_ROLE_PREFIX}${instanceCode}`;
+      const role = await AsyncStorage.getItem(key);
+      return role === 'admin' ? 'admin' : 'member';
+    } catch {
+      return 'member';
+    }
+  }
+
+  /**
+   * Set user role for a specific instance
+   */
+  static async setUserRole(instanceCode: string, role: UserRole): Promise<void> {
+    try {
+      const key = `${STORAGE_KEYS.USER_ROLE_PREFIX}${instanceCode}`;
+      await AsyncStorage.setItem(key, role);
+    } catch (e) {
+      console.warn('Failed to set user role', e);
+    }
+  }
+
+  /**
+   * Retrieve list of custom user-created instances
+   */
+  static async getCustomInstances(): Promise<RepertoireInstance[]> {
+    try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEYS.CUSTOM_INSTANCES);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Save a newly created custom instance
+   */
+  static async saveCustomInstance(instance: RepertoireInstance): Promise<void> {
+    try {
+      const list = await this.getCustomInstances();
+      const existingIdx = list.findIndex(i => i.code === instance.code);
+      if (existingIdx >= 0) {
+        list[existingIdx] = instance;
+      } else {
+        list.push(instance);
+      }
+      await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_INSTANCES, JSON.stringify(list));
+      await this.saveCachedInstance(instance);
+    } catch (e) {
+      console.warn('Failed to save custom instance', e);
     }
   }
 
