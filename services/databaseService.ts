@@ -179,21 +179,7 @@ export class DatabaseService {
       return JSON.parse(JSON.stringify(DEMO_INSTANCES[code]));
     }
 
-    // 5. Synthesize valid code pattern if valid alphanumeric code
-    if (/^[A-Z0-9_-]{3,16}$/.test(code)) {
-      const synthetic: RepertoireInstance = {
-        code,
-        name: `Repertoire [${code}]`,
-        director: 'Choir Director',
-        seasonName: 'Current Season',
-        scores: [],
-        setlists: [],
-        lastUpdated: new Date().toISOString(),
-      };
-      await StorageService.saveCustomInstance(synthetic);
-      return synthetic;
-    }
-
+    // 4. Code was not found in the database or offline cache
     return null;
   }
 

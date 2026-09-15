@@ -132,9 +132,17 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
 
   // Handle Login with Access Code (Links user to group and syncs)
   const signInWithCode = async (rawCode: string): Promise<{ success: boolean; error?: string }> => {
-    const instance = await DatabaseService.getGroupByCode(rawCode);
+    const cleanCode = rawCode.trim().toUpperCase();
+    if (!cleanCode) {
+      return { success: false, error: 'Please enter a choir access code.' };
+    }
+
+    const instance = await DatabaseService.getGroupByCode(cleanCode);
     if (!instance) {
-      return { success: false, error: 'Invalid choir code. Check the code or try demo CANTATE-2026.' };
+      return {
+        success: false,
+        error: `Choir code "${cleanCode}" does not exist in the database. Please verify the code and try again.`,
+      };
     }
 
     try {

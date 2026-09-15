@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  Modal,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +32,8 @@ export default function LoginScreen() {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showCodeErrorModal, setShowCodeErrorModal] = useState(false);
+  const [notFoundCode, setNotFoundCode] = useState('');
 
   // Create Group State
   const [ensembleName, setEnsembleName] = useState('');
@@ -41,7 +44,7 @@ export default function LoginScreen() {
   const demoInstances = InstanceService.getAvailableDemoInstances();
 
   const handleSignIn = async (codeToUse?: string) => {
-    const targetCode = (codeToUse || code).trim();
+    const targetCode = (codeToUse || code).trim().toUpperCase();
     if (!targetCode) {
       setErrorMessage('Please enter an access code.');
       return;
@@ -56,7 +59,10 @@ export default function LoginScreen() {
     if (res.success) {
       router.replace('/(tabs)');
     } else {
-      setErrorMessage(res.error || 'Failed to connect to repertoire instance');
+      const err = res.error || `Choir code "${targetCode}" does not exist in the database.`;
+      setErrorMessage(err);
+      setNotFoundCode(targetCode);
+      setShowCodeErrorModal(true);
     }
   };
 
@@ -434,6 +440,54 @@ export default function LoginScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Code Not Found Error Popup Modal */}
+      <Modal
+        visible={showCodeErrorModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowCodeErrorModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.errorModalCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={[styles.errorIconCircle, { backgroundColor: '#FEE2E2' }]}>
+              <Ionicons name="alert-circle" size={42} color="#DC2626" />
+            </View>
+
+            <Text style={[styles.errorModalTitle, { color: theme.text }]}>
+              Code Does Not Exist
+            </Text>
+
+            <Text style={[styles.errorModalMessage, { color: theme.subtext }]}>
+              The choir code <Text style={{ fontWeight: '700', color: theme.tint }}>{notFoundCode}</Text> was not found in the database.
+            </Text>
+
+            <Text style={[styles.errorModalSub, { color: theme.subtext }]}>
+              Please verify the code with your ensemble director, or connect to a verified choir group.
+            </Text>
+
+            <View style={styles.errorModalActions}>
+              <TouchableOpacity
+                style={[styles.modalActionButton, { backgroundColor: theme.tint }]}
+                onPress={() => setShowCodeErrorModal(false)}>
+                <Text style={styles.modalActionBtnText}>Try Another Code</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalSecondaryBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSubtle }]}
+                onPress={() => {
+                  setShowCodeErrorModal(false);
+                  setCode('CANTATE-2026');
+                  handleSignIn('CANTATE-2026');
+                }}>
+                <Ionicons name="sparkles" size={16} color={theme.tint} style={{ marginRight: 6 }} />
+                <Text style={[styles.modalSecondaryBtnText, { color: theme.text }]}>
+                  Connect to CANTATE-2026
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -698,5 +752,81 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     flex: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  errorModalCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  errorIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  errorModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  errorModalMessage: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  errorModalSub: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20,
+    opacity: 0.8,
+  },
+  errorModalActions: {
+    width: '100%',
+    gap: 10,
+  },
+  modalActionButton: {
+    width: '100%',
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalActionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  modalSecondaryBtn: {
+    width: '100%',
+    height: 44,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalSecondaryBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
