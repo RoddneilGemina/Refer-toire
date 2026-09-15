@@ -47,6 +47,8 @@ export default function SettingsScreen() {
   } = useRepertoire();
 
   const [resyncing, setResyncing] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isClearingCache, setIsClearingCache] = useState(false);
   const [pendingUploadFile, setPendingUploadFile] = useState<SelectedPdfFile | null>(null);
 
   const handlePickScoreFile = async () => {
@@ -92,59 +94,27 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleClearCache = () => {
-    const doClear = async () => {
+  const handleClearCache = async () => {
+    setIsClearingCache(true);
+    try {
       await clearOfflineCache();
-    };
-
-    if (Platform.OS === 'web') {
-      const confirmed = typeof window !== 'undefined' ? window.confirm('Clear all locally saved PDF files?') : true;
-      if (confirmed) {
-        doClear();
-      }
-      return;
+    } catch (err) {
+      console.warn('Clear cache error:', err);
+    } finally {
+      setIsClearingCache(false);
     }
-
-    Alert.alert(
-      'Clear Local PDF Cache',
-      'This will delete all locally saved PDF files. You can re-download them anytime while connected to the internet.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear Cache',
-          style: 'destructive',
-          onPress: doClear,
-        },
-      ]
-    );
   };
 
-  const handleSignOut = () => {
-    const doSignOut = async () => {
+  const handleSignOut = async () => {
+    setIsSigningOut(true);
+    try {
       await signOut();
-      router.replace('/login');
-    };
-
-    if (Platform.OS === 'web') {
-      const confirmed = typeof window !== 'undefined' ? window.confirm('Sign out of the current repertoire instance?') : true;
-      if (confirmed) {
-        doSignOut();
-      }
-      return;
+      router.push('/login');
+    } catch (err) {
+      console.warn('Sign out error:', err);
+    } finally {
+      setIsSigningOut(false);
     }
-
-    Alert.alert(
-      'Switch Choir Ensemble',
-      'Sign out of the current repertoire instance? Your downloaded files will remain saved on this device.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: doSignOut,
-        },
-      ]
-    );
   };
 
   return (
@@ -361,10 +331,15 @@ export default function SettingsScreen() {
                 styles.actionButton,
                 { backgroundColor: theme.surfaceSubtle, borderColor: theme.border },
               ]}
-              onPress={handleClearCache}>
-              <Ionicons name="trash-outline" size={16} color={Colors.status.failed} style={{ marginRight: 6 }} />
+              onPress={handleClearCache}
+              disabled={isClearingCache}>
+              {isClearingCache ? (
+                <ActivityIndicator size="small" color={Colors.status.failed} style={{ marginRight: 6 }} />
+              ) : (
+                <Ionicons name="trash-outline" size={16} color={Colors.status.failed} style={{ marginRight: 6 }} />
+              )}
               <Text style={[styles.actionButtonText, { color: Colors.status.failed }]}>
-                Clear Cache
+                {isClearingCache ? 'Clearing...' : 'Clear Cache'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -375,12 +350,17 @@ export default function SettingsScreen() {
           <TouchableOpacity
             style={[
               styles.signOutButton,
-              { backgroundColor: theme.surfaceSubtle, borderColor: theme.border },
+              { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, opacity: isSigningOut ? 0.7 : 1 },
             ]}
-            onPress={handleSignOut}>
-            <Ionicons name="log-out-outline" size={18} color={Colors.status.failed} style={{ marginRight: 8 }} />
+            onPress={handleSignOut}
+            disabled={isSigningOut}>
+            {isSigningOut ? (
+              <ActivityIndicator size="small" color={Colors.status.failed} style={{ marginRight: 8 }} />
+            ) : (
+              <Ionicons name="log-out-outline" size={18} color={Colors.status.failed} style={{ marginRight: 8 }} />
+            )}
             <Text style={[styles.signOutText, { color: Colors.status.failed }]}>
-              Disconnect from {currentInstance.code}
+              {isSigningOut ? 'Disconnecting...' : `Disconnect from ${currentInstance.code}`}
             </Text>
           </TouchableOpacity>
         )}
