@@ -11,6 +11,17 @@ import { DEMO_INSTANCES } from './instanceService';
 import { StorageService } from './storageService';
 import { supabase } from '@/lib/supabase';
 
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export class DatabaseService {
   /**
    * Generate a clean, memorable choir access code (e.g. "CANTOR-4819")
@@ -59,7 +70,7 @@ export class DatabaseService {
       setlists: [],
     };
 
-    // 1. Persist to Supabase if connected
+    // 1. Persist to Supabase
     try {
       const { error: sbError } = await supabase.from('instances').insert({
         code: finalCode,
@@ -91,6 +102,7 @@ export class DatabaseService {
    */
   static async getGroupByCode(rawCode: string): Promise<RepertoireInstance | null> {
     const code = rawCode.trim().toUpperCase();
+    if (!code) return null;
 
     // 1. Try Supabase cloud database
     try {
@@ -121,7 +133,7 @@ export class DatabaseService {
           pageCount: row.page_count || 2,
           sourceUrl: row.file_url,
           fileSize: Number(row.file_size) || 150000,
-          downloadStatus: 'idle',
+          downloadStatus: 'completed',
           notes: row.notes || undefined,
           tags: row.tags || ['Uploaded'],
           addedAt: row.created_at,
@@ -167,8 +179,8 @@ export class DatabaseService {
       return JSON.parse(JSON.stringify(DEMO_INSTANCES[code]));
     }
 
-    // 5. Synthesize valid code pattern if valid syntax
-    if (/^[A-Z0-9]{3,8}-[A-Z0-9]{2,6}$/.test(code)) {
+    // 5. Synthesize valid code pattern if valid alphanumeric code
+    if (/^[A-Z0-9_-]{3,16}$/.test(code)) {
       const synthetic: RepertoireInstance = {
         code,
         name: `Repertoire [${code}]`,
@@ -178,6 +190,7 @@ export class DatabaseService {
         setlists: [],
         lastUpdated: new Date().toISOString(),
       };
+      await StorageService.saveCustomInstance(synthetic);
       return synthetic;
     }
 
@@ -198,61 +211,66 @@ export class DatabaseService {
       throw new Error(`Group instance ${instanceCode} not found.`);
     }
 
-    const scoreId = `score_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    const scoreId = generateUUID();
     const fileName = `${scoreId}.pdf`;
-
-    // Ensure local document directory exists
-    const dir = new Directory(Paths.document, 'refertoire_scores', instanceCode);
-    try {
-      if (!dir.exists) {
-        dir.create({ intermediates: true });
-      }
-    } catch {
-      // Ignored
-    }
 
     let localFileUri = fileData.uri;
 
-    // Save copy to local app storage
-    try {
-      const targetFile = new File(dir, fileName);
-      if (Platform.OS !== 'web' && fileData.uri.startsWith('file://')) {
-        const sourceFile = new File(fileData.uri);
-        if (sourceFile.exists) {
-          await sourceFile.copy(targetFile);
-          localFileUri = targetFile.uri;
+    // Save copy to local app storage on native mobile only
+    if (Platform.OS !== 'web') {
+      try {
+        const dir = new Directory(Paths.document, 'refertoire_scores', instanceCode);
+        if (!dir.exists) {
+          dir.create({ intermediates: true });
         }
-      } else {
-        localFileUri = targetFile.uri || fileData.uri;
+        const targetFile = new File(dir, fileName);
+        if (fileData.uri.startsWith('file://')) {
+          const sourceFile = new File(fileData.uri);
+          if (sourceFile.exists) {
+            await sourceFile.copy(targetFile);
+            localFileUri = targetFile.uri;
+          }
+        } else {
+          localFileUri = targetFile.uri || fileData.uri;
+        }
+      } catch (fsErr) {
+        console.warn('Native FS copy notice:', fsErr);
+        localFileUri = fileData.uri;
       }
-    } catch (copyErr) {
-      console.warn('Could not copy PDF to storage folder:', copyErr);
-      localFileUri = fileData.uri;
     }
 
     let cloudFileUrl = localFileUri;
 
     // Upload to Supabase Storage bucket 'scores'
     try {
-      const response = await fetch(fileData.uri);
-      const blob = await response.blob();
-      const storagePath = `${instanceCode}/${fileName}`;
+      let uploadBody: any = null;
+      if ((fileData as any).file instanceof Blob) {
+        uploadBody = (fileData as any).file;
+      } else if (fileData.uri) {
+        const response = await fetch(fileData.uri);
+        uploadBody = await response.blob();
+      }
 
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('scores')
-        .upload(storagePath, blob, {
-          contentType: 'application/pdf',
-          upsert: true,
-        });
+      if (uploadBody) {
+        const storagePath = `${instanceCode}/${fileName}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('scores')
+          .upload(storagePath, uploadBody, {
+            contentType: 'application/pdf',
+            upsert: true,
+          });
 
-      if (!uploadError && uploadData) {
-        const { data: urlData } = supabase.storage.from('scores').getPublicUrl(storagePath);
-        if (urlData?.publicUrl) {
-          cloudFileUrl = urlData.publicUrl;
+        if (!uploadError && uploadData) {
+          const { data: urlData } = supabase.storage.from('scores').getPublicUrl(storagePath);
+          if (urlData?.publicUrl) {
+            cloudFileUrl = urlData.publicUrl;
+          }
+        } else if (uploadError) {
+          console.warn('Supabase storage upload notice:', uploadError.message);
         }
       }
     } catch (storageErr) {
-      console.warn('Supabase storage upload notice (using local file):', storageErr);
+      console.warn('Supabase storage upload exception:', storageErr);
     }
 
     const newScore: ScoreItem = {
@@ -278,31 +296,43 @@ export class DatabaseService {
 
     // Insert record in Supabase scores table
     try {
-      await supabase.from('scores').insert({
-        instance_code: instanceCode,
-        title: newScore.title,
-        composer: newScore.composer,
-        arranger: newScore.arranger || null,
-        voicing: newScore.voicing,
-        season: newScore.season,
-        key_signature: newScore.keySignature || null,
-        tempo: newScore.tempo || null,
-        duration: newScore.duration,
-        page_count: newScore.pageCount,
-        file_url: cloudFileUrl,
-        file_size: newScore.fileSize,
-        notes: newScore.notes || null,
-        tags: newScore.tags,
-      });
+      const { data: insertedScore, error: dbErr } = await supabase
+        .from('scores')
+        .insert({
+          id: scoreId,
+          instance_code: instanceCode,
+          title: newScore.title,
+          composer: newScore.composer,
+          arranger: newScore.arranger || null,
+          voicing: newScore.voicing,
+          season: newScore.season,
+          key_signature: newScore.keySignature || null,
+          tempo: newScore.tempo || null,
+          duration: newScore.duration,
+          page_count: newScore.pageCount,
+          file_url: cloudFileUrl,
+          file_size: newScore.fileSize,
+          notes: newScore.notes || null,
+          tags: newScore.tags,
+        })
+        .select()
+        .single();
+
+      if (dbErr) {
+        console.warn('Supabase DB score insert notice:', dbErr.message);
+      } else if (insertedScore) {
+        newScore.id = insertedScore.id;
+      }
     } catch (dbErr) {
       console.warn('Supabase DB score insert notice:', dbErr);
     }
 
     // Save to local instance catalog & cache
-    instance.scores.unshift(newScore);
+    const existingScores = instance.scores.filter(s => s.id !== newScore.id);
+    instance.scores = [newScore, ...existingScores];
     instance.lastUpdated = new Date().toISOString();
     await StorageService.saveCustomInstance(instance);
-    await StorageService.saveLocalScoreUri(instanceCode, scoreId, localFileUri);
+    await StorageService.saveLocalScoreUri(instanceCode, newScore.id, localFileUri);
 
     return newScore;
   }

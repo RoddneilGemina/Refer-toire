@@ -192,12 +192,14 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
     try {
       const createdScore = await DatabaseService.uploadScoreToGroup(currentInstance.code, scoreData, file);
 
-      // Update local state immediately
+      // Update local state immediately so dashboard reflects the new score
       setCurrentInstance(prev => {
         if (!prev) return prev;
+        const otherScores = prev.scores.filter(s => s.id !== createdScore.id);
         return {
           ...prev,
-          scores: [createdScore, ...prev.scores],
+          scores: [createdScore, ...otherScores],
+          lastUpdated: new Date().toISOString(),
         };
       });
 
@@ -208,6 +210,7 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
 
       return { success: true };
     } catch (err: any) {
+      console.error('Upload score error in context:', err);
       return { success: false, error: err?.message || 'Failed to upload score.' };
     }
   };

@@ -110,7 +110,7 @@ export default function UploadScoreModal({ file, onClose, onUpload }: UploadScor
     setIsSubmitting(true);
 
     try {
-      await onUpload(
+      const result = await onUpload(
         {
           title: title.trim(),
           composer: composer.trim() || undefined,
@@ -120,6 +120,11 @@ export default function UploadScoreModal({ file, onClose, onUpload }: UploadScor
         },
         selectedFile
       );
+
+      if (result && !result.success) {
+        setErrorMessage(result.error || 'Failed to upload score. Please try again.');
+        return;
+      }
 
       onClose();
     } catch (e: any) {

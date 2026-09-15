@@ -23,7 +23,7 @@ type TabMode = 'join' | 'create';
 export default function LoginScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme];
-  const { signInWithCode, createGroup, currentInstance } = useRepertoire();
+  const { signInWithCode, createGroup, currentInstance, signOut } = useRepertoire();
 
   const [activeTab, setActiveTab] = useState<TabMode>('join');
 
@@ -54,11 +54,7 @@ export default function LoginScreen() {
     setLoading(false);
 
     if (res.success) {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace('/(tabs)');
-      }
+      router.replace('/(tabs)');
     } else {
       setErrorMessage(res.error || 'Failed to connect to repertoire instance');
     }
@@ -87,11 +83,7 @@ export default function LoginScreen() {
     setLoading(false);
 
     if (res.success) {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace('/(tabs)');
-      }
+      router.replace('/(tabs)');
     } else {
       setErrorMessage(res.error || 'Failed to create group.');
     }
@@ -141,13 +133,25 @@ export default function LoginScreen() {
               <Text style={[styles.currentChoirCode, { color: theme.subtext }]}>
                 Access Code: {currentInstance.code} • {currentInstance.scores.length} scores
               </Text>
-              <TouchableOpacity
-                style={[styles.returnButton, { backgroundColor: theme.surfaceSubtle }]}
-                onPress={() => router.replace('/(tabs)')}>
-                <Text style={[styles.returnButtonText, { color: theme.text }]}>
-                  Return to Library
-                </Text>
-              </TouchableOpacity>
+              <View style={[styles.cardActionsRow, { backgroundColor: 'transparent' }]}>
+                <TouchableOpacity
+                  style={[styles.returnButton, { flex: 1, backgroundColor: theme.tint }]}
+                  onPress={() => router.replace('/(tabs)')}>
+                  <Text style={[styles.returnButtonText, { color: '#FFFFFF' }]}>
+                    Open Library
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.disconnectButton, { flex: 1, backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}
+                  onPress={async () => {
+                    await signOut();
+                    setCode('');
+                  }}>
+                  <Text style={[styles.disconnectButtonText, { color: Colors.status.failed }]}>
+                    Disconnect
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
@@ -516,14 +520,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginBottom: 10,
   },
+  cardActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
   returnButton: {
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 10,
+    borderRadius: 10,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   returnButtonText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  disconnectButton: {
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  disconnectButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   inputCard: {
     borderRadius: 20,

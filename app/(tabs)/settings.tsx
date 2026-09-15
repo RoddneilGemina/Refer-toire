@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Share,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -92,6 +93,18 @@ export default function SettingsScreen() {
   };
 
   const handleClearCache = () => {
+    const doClear = async () => {
+      await clearOfflineCache();
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed = typeof window !== 'undefined' ? window.confirm('Clear all locally saved PDF files?') : true;
+      if (confirmed) {
+        doClear();
+      }
+      return;
+    }
+
     Alert.alert(
       'Clear Local PDF Cache',
       'This will delete all locally saved PDF files. You can re-download them anytime while connected to the internet.',
@@ -100,15 +113,26 @@ export default function SettingsScreen() {
         {
           text: 'Clear Cache',
           style: 'destructive',
-          onPress: async () => {
-            await clearOfflineCache();
-          },
+          onPress: doClear,
         },
       ]
     );
   };
 
   const handleSignOut = () => {
+    const doSignOut = async () => {
+      await signOut();
+      router.replace('/login');
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed = typeof window !== 'undefined' ? window.confirm('Sign out of the current repertoire instance?') : true;
+      if (confirmed) {
+        doSignOut();
+      }
+      return;
+    }
+
     Alert.alert(
       'Switch Choir Ensemble',
       'Sign out of the current repertoire instance? Your downloaded files will remain saved on this device.',
@@ -117,10 +141,7 @@ export default function SettingsScreen() {
         {
           text: 'Sign Out',
           style: 'destructive',
-          onPress: async () => {
-            await signOut();
-            router.replace('/login');
-          },
+          onPress: doSignOut,
         },
       ]
     );
