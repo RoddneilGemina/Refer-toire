@@ -15,7 +15,8 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
 import { DownloadService } from '@/services/downloadService';
-import UploadScoreModal from '@/components/UploadScoreModal';
+import * as DocumentPicker from 'expo-document-picker';
+import UploadScoreModal, { SelectedPdfFile } from '@/components/UploadScoreModal';
 
 const VOICE_SECTIONS = [
   { id: 'Soprano 1', label: 'Soprano 1' },
@@ -45,7 +46,27 @@ export default function SettingsScreen() {
   } = useRepertoire();
 
   const [resyncing, setResyncing] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [pendingUploadFile, setPendingUploadFile] = useState<SelectedPdfFile | null>(null);
+
+  const handlePickScoreFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'application/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setPendingUploadFile({
+          uri: asset.uri,
+          name: asset.name,
+          size: asset.size,
+        });
+      }
+    } catch (err) {
+      console.warn('Error opening file picker:', err);
+    }
+  };
 
   const downloadedCount = scores.filter(s => s.downloadStatus === 'completed').length;
   const totalScores = scores.length;
@@ -208,7 +229,7 @@ export default function SettingsScreen() {
 
             <TouchableOpacity
               style={[styles.adminUploadBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
-              onPress={() => setShowUploadModal(true)}>
+              onPress={handlePickScoreFile}>
               <Ionicons name="cloud-upload-outline" size={18} color={theme.tint} style={{ marginRight: 8 }} />
               <Text style={[styles.adminUploadBtnText, { color: theme.text }]}>
                 Upload New Sheet Music (PDF)
@@ -356,8 +377,8 @@ export default function SettingsScreen() {
 
       {/* Upload Modal (accessible by admin from settings as well) */}
       <UploadScoreModal
-        visible={showUploadModal}
-        onClose={() => setShowUploadModal(false)}
+        file={pendingUploadFile}
+        onClose={() => setPendingUploadFile(null)}
         onUpload={uploadScore}
       />
     </SafeAreaView>

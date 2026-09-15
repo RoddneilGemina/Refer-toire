@@ -11,16 +11,17 @@ export class DownloadService {
   /**
    * Get or create directory for instance scores
    */
-  static getScoresDirectory(instanceCode: string): Directory {
-    const dir = new Directory(Paths.document, 'refertoire_scores', instanceCode);
+  static getScoresDirectory(instanceCode: string): Directory | null {
+    if (Platform.OS === 'web') return null;
     try {
+      const dir = new Directory(Paths.document, 'refertoire_scores', instanceCode);
       if (!dir.exists) {
         dir.create({ intermediates: true });
       }
+      return dir;
     } catch {
-      // Handled gracefully if already exists or on web
+      return null;
     }
-    return dir;
   }
 
   /**
@@ -31,7 +32,19 @@ export class DownloadService {
     score: ScoreItem,
     onProgress?: (progressPercent: number) => void
   ): Promise<string> {
+    if (Platform.OS === 'web') {
+      if (onProgress) onProgress(100);
+      await StorageService.saveLocalScoreUri(instanceCode, score.id, score.sourceUrl);
+      return score.sourceUrl;
+    }
+
     const dir = this.getScoresDirectory(instanceCode);
+    if (!dir) {
+      const fallbackUri = score.sourceUrl;
+      await StorageService.saveLocalScoreUri(instanceCode, score.id, fallbackUri);
+      return fallbackUri;
+    }
+
     const targetFile = new File(dir, `${score.id}.pdf`);
 
     // Check if already downloaded
@@ -42,16 +55,14 @@ export class DownloadService {
     }
 
     try {
-      if (Platform.OS !== 'web') {
-        // Attempt network download
-        const downloaded = await File.downloadFileAsync(score.sourceUrl, targetFile, {
-          idempotent: true,
-        });
-        if (downloaded.exists) {
-          if (onProgress) onProgress(100);
-          await StorageService.saveLocalScoreUri(instanceCode, score.id, downloaded.uri);
-          return downloaded.uri;
-        }
+      // Attempt network download
+      const downloaded = await File.downloadFileAsync(score.sourceUrl, targetFile, {
+        idempotent: true,
+      });
+      if (downloaded.exists) {
+        if (onProgress) onProgress(100);
+        await StorageService.saveLocalScoreUri(instanceCode, score.id, downloaded.uri);
+        return downloaded.uri;
       }
       throw new Error('Fallback to local offline score cache');
     } catch {
@@ -143,6 +154,10 @@ export class DownloadService {
    * Delete cached score files for an instance
    */
   static async clearCache(instanceCode: string): Promise<void> {
+    if (Platform.OS === 'web') {
+      await StorageService.clearLocalScoreUris(instanceCode);
+      return;
+    }
     try {
       const dir = new Directory(Paths.document, 'refertoire_scores', instanceCode);
       if (dir.exists) {
@@ -158,6 +173,9 @@ export class DownloadService {
    * Calculate total disk usage in bytes for an instance
    */
   static getInstanceDiskUsage(instanceCode: string): number {
+    if (Platform.OS === 'web') {
+      return 0;
+    }
     try {
       const dir = new Directory(Paths.document, 'refertoire_scores', instanceCode);
       return dir.size ?? 0;

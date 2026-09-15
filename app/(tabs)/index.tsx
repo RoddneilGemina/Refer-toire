@@ -16,7 +16,8 @@ import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
 import { ScoreItem, Voicing, LiturgicalSeason } from '@/types/repertoire';
 import { SORT_OPTIONS } from '@/utils/sorting';
-import UploadScoreModal from '@/components/UploadScoreModal';
+import * as DocumentPicker from 'expo-document-picker';
+import UploadScoreModal, { SelectedPdfFile } from '@/components/UploadScoreModal';
 
 const VOICING_FILTERS: Array<Voicing | 'ALL'> = ['ALL', 'SATB', 'SSAA', 'TTBB', 'SAB'];
 const SEASON_FILTERS: Array<LiturgicalSeason | 'ALL'> = ['ALL', 'Lent', 'Holy Week', 'Christmas', 'Concert', 'Evensong', 'General'];
@@ -47,7 +48,27 @@ export default function RepertoireLibraryScreen() {
   } = useRepertoire();
 
   const [showFilterDrawer, setShowFilterDrawer] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [pendingUploadFile, setPendingUploadFile] = useState<SelectedPdfFile | null>(null);
+
+  const handlePickScoreFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'application/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        setPendingUploadFile({
+          uri: asset.uri,
+          name: asset.name,
+          size: asset.size,
+        });
+      }
+    } catch (err) {
+      console.warn('Error opening file picker:', err);
+    }
+  };
 
   // If no instance loaded, show welcome empty state
   if (!isLoading && !currentInstance) {
@@ -424,7 +445,7 @@ export default function RepertoireLibraryScreen() {
             {userRole === 'admin' && currentInstance?.scores.length === 0 && (
               <TouchableOpacity
                 style={[styles.primaryButton, { backgroundColor: theme.tint, marginTop: 16 }]}
-                onPress={() => setShowUploadModal(true)}>
+                onPress={handlePickScoreFile}>
                 <Ionicons name="cloud-upload-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
                 <Text style={styles.primaryButtonText}>Upload First Score (PDF)</Text>
               </TouchableOpacity>
@@ -437,17 +458,17 @@ export default function RepertoireLibraryScreen() {
       {userRole === 'admin' && (
         <TouchableOpacity
           style={[styles.fabButton, { backgroundColor: theme.tint }]}
-          onPress={() => setShowUploadModal(true)}
+          onPress={handlePickScoreFile}
           activeOpacity={0.8}>
           <Ionicons name="add" size={24} color="#FFFFFF" />
           <Text style={styles.fabText}>Upload PDF</Text>
         </TouchableOpacity>
       )}
 
-      {/* PDF Upload Modal */}
+      {/* PDF Upload Modal (Only opens after choosing a file) */}
       <UploadScoreModal
-        visible={showUploadModal}
-        onClose={() => setShowUploadModal(false)}
+        file={pendingUploadFile}
+        onClose={() => setPendingUploadFile(null)}
         onUpload={uploadScore}
       />
     </SafeAreaView>
