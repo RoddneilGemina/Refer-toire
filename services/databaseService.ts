@@ -165,10 +165,10 @@ export class DatabaseService {
     const newScore: ScoreItem = {
       id: scoreId,
       title: scoreData.title.trim(),
-      composer: scoreData.composer.trim(),
+      composer: scoreData.composer?.trim() || 'Choral',
       arranger: scoreData.arranger?.trim() || undefined,
-      voicing: scoreData.voicing,
-      season: scoreData.season,
+      voicing: scoreData.voicing || 'SATB',
+      season: scoreData.season || 'General',
       keySignature: scoreData.keySignature?.trim() || undefined,
       tempo: scoreData.tempo?.trim() || undefined,
       duration: scoreData.duration?.trim() || '3:00',
@@ -179,7 +179,7 @@ export class DatabaseService {
       downloadStatus: 'completed',
       downloadProgress: 100,
       notes: scoreData.notes?.trim() || undefined,
-      tags: scoreData.tags && scoreData.tags.length > 0 ? scoreData.tags : ['Uploaded', scoreData.season],
+      tags: scoreData.tags && scoreData.tags.length > 0 ? scoreData.tags : ['Uploaded', scoreData.season || 'General'],
       addedAt: new Date().toISOString(),
     };
 

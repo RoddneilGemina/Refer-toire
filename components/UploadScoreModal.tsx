@@ -6,8 +6,6 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
-  Platform,
-  Alert,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,35 +23,30 @@ interface UploadScoreModalProps {
   ) => Promise<any>;
 }
 
-const VOICING_OPTIONS: Voicing[] = ['SATB', 'SATB div.', 'SSAA', 'SSA', 'TTBB', 'SAB', 'Unison', 'Solo & Choir'];
-const SEASON_OPTIONS: LiturgicalSeason[] = ['Concert', 'General', 'Lent', 'Holy Week', 'Easter', 'Advent', 'Christmas', 'Evensong'];
+const VOICING_OPTIONS: Voicing[] = ['SATB', 'SATB div.', 'SSAA', 'SSA', 'TTBB', 'SAB', 'Unison'];
 
 export default function UploadScoreModal({ visible, onClose, onUpload }: UploadScoreModalProps) {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme];
 
+  // Only Song Title is required
   const [title, setTitle] = useState('');
-  const [composer, setComposer] = useState('');
-  const [arranger, setArranger] = useState('');
-  const [voicing, setVoicing] = useState<Voicing>('SATB');
-  const [season, setSeason] = useState<LiturgicalSeason>('Concert');
-  const [keySignature, setKeySignature] = useState('');
-  const [tempo, setTempo] = useState('');
-  const [notes, setNotes] = useState('');
   const [selectedFile, setSelectedFile] = useState<{ uri: string; name: string; size?: number } | null>(null);
+
+  // Optional collapsible details
+  const [showOptionalDetails, setShowOptionalDetails] = useState(false);
+  const [composer, setComposer] = useState('');
+  const [voicing, setVoicing] = useState<Voicing>('SATB');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const resetForm = () => {
     setTitle('');
-    setComposer('');
-    setArranger('');
-    setVoicing('SATB');
-    setSeason('Concert');
-    setKeySignature('');
-    setTempo('');
-    setNotes('');
     setSelectedFile(null);
+    setComposer('');
+    setVoicing('SATB');
+    setShowOptionalDetails(false);
     setErrorMessage(null);
     setIsSubmitting(false);
   };
@@ -73,38 +66,40 @@ export default function UploadScoreModal({ visible, onClose, onUpload }: UploadS
           size: asset.size,
         });
 
-        // Pre-fill title if empty from filename
+        // Auto-fill song title from the selected PDF filename if title is empty
         if (!title && asset.name) {
-          const cleanName = asset.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+          const cleanName = asset.name
+            .replace(/\.[^/.]+$/, '') // Remove extension
+            .replace(/[_-]/g, ' ') // Replace underscores and dashes with spaces
+            .trim();
           setTitle(cleanName);
         }
       }
     } catch (err) {
       console.warn('Document picker error:', err);
-      // Fallback demo file
       handleUseDemoFile();
     }
   };
 
   const handleUseDemoFile = () => {
+    const demoName = 'Ave_Verum_Corpus.pdf';
     setSelectedFile({
       uri: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-      name: 'Sample_Choral_Score.pdf',
+      name: demoName,
       size: 145000,
     });
+    if (!title) {
+      setTitle('Ave Verum Corpus');
+    }
   };
 
   const handleSubmit = async () => {
-    if (!title.trim()) {
-      setErrorMessage('Please enter the score title.');
-      return;
-    }
-    if (!composer.trim()) {
-      setErrorMessage('Please enter the composer.');
-      return;
-    }
     if (!selectedFile) {
-      setErrorMessage('Please choose a PDF sheet music file.');
+      setErrorMessage('Please select a PDF file first.');
+      return;
+    }
+    if (!title.trim()) {
+      setErrorMessage('Please enter the song title.');
       return;
     }
 
@@ -115,14 +110,10 @@ export default function UploadScoreModal({ visible, onClose, onUpload }: UploadS
       await onUpload(
         {
           title: title.trim(),
-          composer: composer.trim(),
-          arranger: arranger.trim() || undefined,
-          voicing,
-          season,
-          keySignature: keySignature.trim() || undefined,
-          tempo: tempo.trim() || undefined,
-          notes: notes.trim() || undefined,
-          tags: [season, voicing, 'Uploaded'],
+          composer: composer.trim() || undefined,
+          voicing: voicing || 'SATB',
+          season: 'General',
+          tags: ['Uploaded'],
         },
         selectedFile
       );
@@ -130,7 +121,7 @@ export default function UploadScoreModal({ visible, onClose, onUpload }: UploadS
       resetForm();
       onClose();
     } catch (e: any) {
-      setErrorMessage(e?.message || 'Failed to upload score. Please try again.');
+      setErrorMessage(e?.message || 'Failed to upload file. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -142,9 +133,9 @@ export default function UploadScoreModal({ visible, onClose, onUpload }: UploadS
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: theme.border, backgroundColor: theme.card }]}>
           <View style={{ flex: 1, backgroundColor: 'transparent' }}>
-            <Text style={[styles.headerTitle, { color: theme.text }]}>Upload Score PDF</Text>
+            <Text style={[styles.headerTitle, { color: theme.text }]}>Upload Sheet Music</Text>
             <Text style={[styles.headerSubtitle, { color: theme.subtext }]}>
-              Add sheet music to choir repertoire
+              Add a new PDF score to choir repertoire
             </Text>
           </View>
           <TouchableOpacity
@@ -160,7 +151,7 @@ export default function UploadScoreModal({ visible, onClose, onUpload }: UploadS
         <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           {/* PDF File Picker Section */}
           <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <Text style={[styles.fieldLabel, { color: theme.text }]}>Sheet Music PDF File</Text>
+            <Text style={[styles.fieldLabel, { color: theme.text }]}>PDF Sheet Music File *</Text>
 
             {selectedFile ? (
               <View style={[styles.filePreviewRow, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}>
@@ -169,8 +160,8 @@ export default function UploadScoreModal({ visible, onClose, onUpload }: UploadS
                   <Text style={[styles.fileName, { color: theme.text }]} numberOfLines={1}>
                     {selectedFile.name}
                   </Text>
-                  <Text style={[styles.fileSize, { color: theme.subtext }]}>
-                    {selectedFile.size ? `${(selectedFile.size / 1024).toFixed(1)} KB` : 'PDF Document ready'}
+                  <Text style={[styles.fileSize, { color: Colors.status.completed }]}>
+                    ✓ Ready to upload {selectedFile.size ? `(${(selectedFile.size / 1024).toFixed(1)} KB)` : ''}
                   </Text>
                 </View>
                 <TouchableOpacity onPress={() => setSelectedFile(null)}>
@@ -179,10 +170,10 @@ export default function UploadScoreModal({ visible, onClose, onUpload }: UploadS
               </View>
             ) : (
               <View style={[styles.pickerBox, { borderColor: theme.border, backgroundColor: theme.surfaceSubtle }]}>
-                <Ionicons name="cloud-upload-outline" size={36} color={theme.tint} style={{ marginBottom: 6 }} />
-                <Text style={[styles.pickerTitle, { color: theme.text }]}>Choose PDF Sheet Music</Text>
+                <Ionicons name="cloud-upload-outline" size={38} color={theme.tint} style={{ marginBottom: 6 }} />
+                <Text style={[styles.pickerTitle, { color: theme.text }]}>Choose PDF Score</Text>
                 <Text style={[styles.pickerHint, { color: theme.subtext }]}>
-                  Upload digital vocal score from device
+                  Select your digital sheet music file from device
                 </Text>
 
                 <View style={[styles.pickerActions, { backgroundColor: 'transparent' }]}>
@@ -190,130 +181,92 @@ export default function UploadScoreModal({ visible, onClose, onUpload }: UploadS
                     style={[styles.pickButton, { backgroundColor: theme.tint }]}
                     onPress={handlePickDocument}>
                     <Ionicons name="folder-open-outline" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
-                    <Text style={styles.pickButtonText}>Browse Files</Text>
+                    <Text style={styles.pickButtonText}>Browse PDF</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
                     style={[styles.demoPickBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
                     onPress={handleUseDemoFile}>
-                    <Text style={[styles.demoPickBtnText, { color: theme.subtext }]}>Use Sample PDF</Text>
+                    <Text style={[styles.demoPickBtnText, { color: theme.subtext }]}>Use Sample File</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             )}
           </View>
 
-          {/* Metadata Form */}
+          {/* Song Title Input (The primary & required detail) */}
           <View style={[styles.sectionCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            {/* Title */}
-            <Text style={[styles.fieldLabel, { color: theme.text }]}>Score Title *</Text>
+            <Text style={[styles.fieldLabel, { color: theme.text }]}>Song Title *</Text>
+            <Text style={[styles.fieldHint, { color: theme.subtext }]}>
+              The title displayed in your choir repertoire library
+            </Text>
+
             <TextInput
-              style={[styles.input, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text }]}
+              style={[
+                styles.titleInput,
+                { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text },
+              ]}
               placeholder="e.g. Hallelujah Chorus"
               placeholderTextColor={theme.subtext}
               value={title}
-              onChangeText={setTitle}
+              onChangeText={t => {
+                setTitle(t);
+                setErrorMessage(null);
+              }}
+              autoFocus={Boolean(selectedFile)}
             />
+          </View>
 
-            {/* Composer */}
-            <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 12 }]}>Composer *</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text }]}
-              placeholder="e.g. George Frideric Handel"
-              placeholderTextColor={theme.subtext}
-              value={composer}
-              onChangeText={setComposer}
-            />
-
-            {/* Arranger */}
-            <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 12 }]}>Arranger / Editor</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text }]}
-              placeholder="Optional (e.g. arr. John Rutter)"
-              placeholderTextColor={theme.subtext}
-              value={arranger}
-              onChangeText={setArranger}
-            />
-
-            {/* Voicing Selection */}
-            <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 14 }]}>Voicing</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll}>
-              {VOICING_OPTIONS.map(v => (
-                <TouchableOpacity
-                  key={v}
-                  style={[
-                    styles.chip,
-                    {
-                      backgroundColor: voicing === v ? theme.tint : theme.surfaceSubtle,
-                      borderColor: voicing === v ? theme.tint : theme.border,
-                    },
-                  ]}
-                  onPress={() => setVoicing(v)}>
-                  <Text style={[styles.chipText, { color: voicing === v ? '#FFFFFF' : theme.text }]}>{v}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Liturgical Season Selection */}
-            <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 14 }]}>Season / Occasion</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll}>
-              {SEASON_OPTIONS.map(s => (
-                <TouchableOpacity
-                  key={s}
-                  style={[
-                    styles.chip,
-                    {
-                      backgroundColor: season === s ? theme.tint : theme.surfaceSubtle,
-                      borderColor: season === s ? theme.tint : theme.border,
-                    },
-                  ]}
-                  onPress={() => setSeason(s)}>
-                  <Text style={[styles.chipText, { color: season === s ? '#FFFFFF' : theme.text }]}>{s}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {/* Key Signature & Tempo Row */}
-            <View style={[styles.rowFields, { backgroundColor: 'transparent' }]}>
-              <View style={{ flex: 1, backgroundColor: 'transparent' }}>
-                <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 12 }]}>Key Signature</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text }]}
-                  placeholder="e.g. D Major"
-                  placeholderTextColor={theme.subtext}
-                  value={keySignature}
-                  onChangeText={setKeySignature}
-                />
+          {/* Optional Details Collapsible (Optional composer / voicing) */}
+          <View style={[styles.optionalSection, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <TouchableOpacity
+              style={[styles.optionalToggleRow, { backgroundColor: 'transparent' }]}
+              onPress={() => setShowOptionalDetails(!showOptionalDetails)}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'transparent' }}>
+                <Ionicons name="options-outline" size={16} color={theme.subtext} />
+                <Text style={[styles.optionalToggleText, { color: theme.subtext }]}>
+                  Additional Details (Optional)
+                </Text>
               </View>
+              <Ionicons
+                name={showOptionalDetails ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={theme.subtext}
+              />
+            </TouchableOpacity>
 
-              <View style={{ flex: 1, backgroundColor: 'transparent' }}>
-                <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 12 }]}>Tempo</Text>
+            {showOptionalDetails && (
+              <View style={[styles.optionalBody, { backgroundColor: 'transparent' }]}>
+                {/* Composer */}
+                <Text style={[styles.optionalLabel, { color: theme.text }]}>Composer (Optional)</Text>
                 <TextInput
-                  style={[styles.input, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text }]}
-                  placeholder="e.g. Allegro (♩ = 108)"
+                  style={[styles.optionalInput, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text }]}
+                  placeholder="e.g. George Frideric Handel"
                   placeholderTextColor={theme.subtext}
-                  value={tempo}
-                  onChangeText={setTempo}
+                  value={composer}
+                  onChangeText={setComposer}
                 />
-              </View>
-            </View>
 
-            {/* Conductor Rehearsal Notes */}
-            <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 12 }]}>
-              Conductor's Rehearsal Notes
-            </Text>
-            <TextInput
-              style={[
-                styles.textArea,
-                { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text },
-              ]}
-              placeholder="Instructions for rehearsals, breathing marks, bar numbers, dynamics..."
-              placeholderTextColor={theme.subtext}
-              multiline
-              numberOfLines={3}
-              value={notes}
-              onChangeText={setNotes}
-            />
+                {/* Voicing */}
+                <Text style={[styles.optionalLabel, { color: theme.text, marginTop: 10 }]}>Voicing</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll}>
+                  {VOICING_OPTIONS.map(v => (
+                    <TouchableOpacity
+                      key={v}
+                      style={[
+                        styles.chip,
+                        {
+                          backgroundColor: voicing === v ? theme.tint : theme.surfaceSubtle,
+                          borderColor: voicing === v ? theme.tint : theme.border,
+                        },
+                      ]}
+                      onPress={() => setVoicing(v)}>
+                      <Text style={[styles.chipText, { color: voicing === v ? '#FFFFFF' : theme.text }]}>{v}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
           </View>
 
           {errorMessage && (
@@ -332,8 +285,8 @@ export default function UploadScoreModal({ visible, onClose, onUpload }: UploadS
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <>
-                <Ionicons name="checkmark-circle-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                <Text style={styles.submitButtonText}>Upload to Choir Repertoire</Text>
+                <Ionicons name="cloud-upload" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                <Text style={styles.submitButtonText}>Upload Song</Text>
               </>
             )}
           </TouchableOpacity>
@@ -380,43 +333,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   fieldLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    marginBottom: 6,
-  },
-  input: {
-    height: 46,
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 12,
     fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
   },
-  textArea: {
-    minHeight: 74,
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 13,
-    textAlignVertical: 'top',
+  fieldHint: {
+    fontSize: 12,
+    marginBottom: 10,
   },
-  rowFields: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  chipsScroll: {
-    flexDirection: 'row',
-    marginVertical: 4,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  titleInput: {
+    height: 50,
     borderRadius: 12,
     borderWidth: 1,
-    marginRight: 8,
-  },
-  chipText: {
-    fontSize: 12,
+    paddingHorizontal: 14,
+    fontSize: 16,
     fontWeight: '600',
   },
   pickerBox: {
@@ -473,8 +403,56 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   fileSize: {
-    fontSize: 11,
+    fontSize: 12,
+    fontWeight: '600',
     marginTop: 2,
+  },
+  optionalSection: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 14,
+  },
+  optionalToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  optionalToggleText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  optionalBody: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(150,150,150,0.2)',
+  },
+  optionalLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  optionalInput: {
+    height: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    fontSize: 13,
+  },
+  chipsScroll: {
+    flexDirection: 'row',
+    marginVertical: 4,
+  },
+  chip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginRight: 6,
+  },
+  chipText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   errorBox: {
     flexDirection: 'row',
@@ -493,7 +471,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     height: 52,
     borderRadius: 14,
-    marginTop: 8,
+    marginTop: 4,
   },
   submitButtonText: {
     color: '#FFFFFF',

@@ -84,10 +84,10 @@ export interface CreateGroupParams {
 
 export interface UploadScoreData {
   title: string;
-  composer: string;
+  composer?: string;
   arranger?: string;
-  voicing: Voicing;
-  season: LiturgicalSeason;
+  voicing?: Voicing;
+  season?: LiturgicalSeason;
   keySignature?: string;
   tempo?: string;
   duration?: string;
