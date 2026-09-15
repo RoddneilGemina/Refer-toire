@@ -16,7 +16,6 @@ import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
-import { InstanceService } from '@/services/instanceService';
 import { DatabaseService } from '@/services/databaseService';
 
 type TabMode = 'join' | 'create';
@@ -40,8 +39,6 @@ export default function LoginScreen() {
   const [directorName, setDirectorName] = useState('');
   const [seasonName, setSeasonName] = useState('');
   const [customCode, setCustomCode] = useState('');
-
-  const demoInstances = InstanceService.getAvailableDemoInstances();
 
   const handleSignIn = async (codeToUse?: string) => {
     const targetCode = (codeToUse || code).trim().toUpperCase();
@@ -231,7 +228,7 @@ export default function LoginScreen() {
                   <Ionicons name="key-outline" size={20} color={theme.subtext} style={styles.inputIcon} />
                   <TextInput
                     style={[styles.inputField, { color: theme.text }]}
-                    placeholder="e.g. CANTATE-2026"
+                    placeholder="Enter Choir Access Code"
                     placeholderTextColor={theme.subtext}
                     autoCapitalize="characters"
                     autoCorrect={false}
@@ -280,39 +277,6 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* Demo Instances Section */}
-              <View style={[styles.demoSection, { backgroundColor: 'transparent' }]}>
-                <Text style={[styles.demoSectionTitle, { color: theme.subtext }]}>
-                  OR JOIN A DEMO ENSEMBLE
-                </Text>
-
-                {demoInstances.map(demo => (
-                  <TouchableOpacity
-                    key={demo.code}
-                    style={[
-                      styles.demoCard,
-                      { backgroundColor: theme.card, borderColor: theme.border },
-                    ]}
-                    onPress={() => {
-                      setCode(demo.code);
-                      handleSignIn(demo.code);
-                    }}
-                    disabled={loading}>
-                    <View style={[styles.demoCardLeft, { backgroundColor: 'transparent' }]}>
-                      <View style={[styles.demoBadge, { backgroundColor: theme.badgeBackground }]}>
-                        <Text style={[styles.demoBadgeText, { color: theme.badgeText }]}>
-                          {demo.code}
-                        </Text>
-                      </View>
-                      <Text style={[styles.demoName, { color: theme.text }]}>{demo.name}</Text>
-                      <Text style={[styles.demoScoreCount, { color: theme.subtext }]}>
-                        {demo.scoreCount} scores ready for offline sync
-                      </Text>
-                    </View>
-                    <Ionicons name="arrow-forward" size={18} color={theme.tint} />
-                  </TouchableOpacity>
-                ))}
-              </View>
             </>
           ) : (
             /* CREATE GROUP TAB CONTENT */
@@ -470,19 +434,6 @@ export default function LoginScreen() {
                 style={[styles.modalActionButton, { backgroundColor: theme.tint }]}
                 onPress={() => setShowCodeErrorModal(false)}>
                 <Text style={styles.modalActionBtnText}>Try Another Code</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.modalSecondaryBtn, { borderColor: theme.border, backgroundColor: theme.surfaceSubtle }]}
-                onPress={() => {
-                  setShowCodeErrorModal(false);
-                  setCode('CANTATE-2026');
-                  handleSignIn('CANTATE-2026');
-                }}>
-                <Ionicons name="sparkles" size={16} color={theme.tint} style={{ marginRight: 6 }} />
-                <Text style={[styles.modalSecondaryBtnText, { color: theme.text }]}>
-                  Connect to CANTATE-2026
-                </Text>
               </TouchableOpacity>
             </View>
           </View>

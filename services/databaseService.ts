@@ -7,7 +7,6 @@ import {
   UploadScoreData,
   UserRole,
 } from '@/types/repertoire';
-import { DEMO_INSTANCES } from './instanceService';
 import { StorageService } from './storageService';
 import { supabase } from '@/lib/supabase';
 
@@ -172,11 +171,6 @@ export class DatabaseService {
     const cached = await StorageService.getCachedInstance(code);
     if (cached) {
       return cached;
-    }
-
-    // 4. Check demo instances
-    if (DEMO_INSTANCES[code]) {
-      return JSON.parse(JSON.stringify(DEMO_INSTANCES[code]));
     }
 
     // 4. Code was not found in the database or offline cache

@@ -53,7 +53,7 @@ export default function InfoModalScreen() {
           <View style={[styles.stepRow, { backgroundColor: 'transparent' }]}>
             <Ionicons name="key-outline" size={18} color={theme.tint} />
             <Text style={[styles.stepText, { color: theme.text }]}>
-              Sign in with your ensemble's access code (e.g. CANTATE-2026).
+              Sign in with your ensemble's unique access code.
             </Text>
           </View>
           <View style={[styles.stepRow, { backgroundColor: 'transparent' }]}>
