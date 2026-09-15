@@ -9,6 +9,7 @@ import {
 } from '@/types/repertoire';
 import { DEMO_INSTANCES } from './instanceService';
 import { StorageService } from './storageService';
+import { supabase } from '@/lib/supabase';
 
 export class DatabaseService {
   /**
@@ -31,7 +32,7 @@ export class DatabaseService {
 
   /**
    * Create a new, initially empty Refer-toire group
-   * Automatically sets the creator's role to 'admin'
+   * Syncs to Supabase instances table and caches locally
    */
   static async createGroup(params: CreateGroupParams): Promise<{
     instance: RepertoireInstance;
@@ -40,13 +41,6 @@ export class DatabaseService {
     let finalCode = params.customCode?.trim().toUpperCase();
     if (!finalCode) {
       finalCode = this.generateUniqueCode(params.name);
-    }
-
-    // Check collision with demo or existing
-    const existing = await this.getGroupByCode(finalCode);
-    if (existing) {
-      // Add random digits if duplicate
-      finalCode = `${finalCode}-${Math.floor(100 + Math.random() * 900)}`;
     }
 
     const adminKey = `adm_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -61,11 +55,28 @@ export class DatabaseService {
       isCustom: true,
       createdDate: new Date().toISOString(),
       lastUpdated: new Date().toISOString(),
-      scores: [], // Starts completely empty as requested
+      scores: [], // Starts completely empty
       setlists: [],
     };
 
-    // Save to persistent storage
+    // 1. Persist to Supabase if connected
+    try {
+      const { error: sbError } = await supabase.from('instances').insert({
+        code: finalCode,
+        name: newInstance.name,
+        director: newInstance.director,
+        subtitle: newInstance.subtitle,
+        season_name: newInstance.seasonName,
+        admin_key: adminKey,
+      });
+      if (sbError) {
+        console.warn('Supabase group insert notice:', sbError.message);
+      }
+    } catch (e) {
+      console.warn('Supabase offline fallback:', e);
+    }
+
+    // 2. Always save locally for offline performance
     await StorageService.saveCustomInstance(newInstance);
     await StorageService.setUserRole(finalCode, 'admin');
 
@@ -76,30 +87,87 @@ export class DatabaseService {
   }
 
   /**
-   * Look up group by code (checks custom instances first, then demo catalog)
+   * Look up group by code (queries Supabase with offline cache fallback)
    */
   static async getGroupByCode(rawCode: string): Promise<RepertoireInstance | null> {
     const code = rawCode.trim().toUpperCase();
 
-    // 1. Check custom instances
+    // 1. Try Supabase cloud database
+    try {
+      const { data: instData, error: instError } = await supabase
+        .from('instances')
+        .select('*')
+        .eq('code', code)
+        .maybeSingle();
+
+      if (instData && !instError) {
+        // Query linked scores from Supabase
+        const { data: scoreRows } = await supabase
+          .from('scores')
+          .select('*')
+          .eq('instance_code', code)
+          .order('created_at', { ascending: false });
+
+        const scores: ScoreItem[] = (scoreRows || []).map(row => ({
+          id: row.id,
+          title: row.title,
+          composer: row.composer || 'Choral',
+          arranger: row.arranger || undefined,
+          voicing: row.voicing || 'SATB',
+          season: row.season || 'General',
+          keySignature: row.key_signature || undefined,
+          tempo: row.tempo || undefined,
+          duration: row.duration || '3:00',
+          pageCount: row.page_count || 2,
+          sourceUrl: row.file_url,
+          fileSize: Number(row.file_size) || 150000,
+          downloadStatus: 'idle',
+          notes: row.notes || undefined,
+          tags: row.tags || ['Uploaded'],
+          addedAt: row.created_at,
+        }));
+
+        const cloudInstance: RepertoireInstance = {
+          code: instData.code,
+          name: instData.name,
+          director: instData.director,
+          subtitle: instData.subtitle || undefined,
+          seasonName: instData.season_name || 'Current Season',
+          adminKey: instData.admin_key || undefined,
+          isCustom: true,
+          createdDate: instData.created_at,
+          lastUpdated: instData.last_updated || instData.created_at,
+          scores,
+          setlists: [],
+        };
+
+        // Cache locally for offline use
+        await StorageService.saveCustomInstance(cloudInstance);
+        return cloudInstance;
+      }
+    } catch (e) {
+      console.warn('Supabase query error, checking local store:', e);
+    }
+
+    // 2. Check local custom instances in AsyncStorage
     const customList = await StorageService.getCustomInstances();
     const foundCustom = customList.find(i => i.code === code);
     if (foundCustom) {
       return JSON.parse(JSON.stringify(foundCustom));
     }
 
-    // 2. Check cached instance in AsyncStorage
+    // 3. Check cached instance in AsyncStorage
     const cached = await StorageService.getCachedInstance(code);
     if (cached) {
       return cached;
     }
 
-    // 3. Check demo instances
+    // 4. Check demo instances
     if (DEMO_INSTANCES[code]) {
       return JSON.parse(JSON.stringify(DEMO_INSTANCES[code]));
     }
 
-    // 4. Synthesize valid code pattern if not found
+    // 5. Synthesize valid code pattern if valid syntax
     if (/^[A-Z0-9]{3,8}-[A-Z0-9]{2,6}$/.test(code)) {
       const synthetic: RepertoireInstance = {
         code,
@@ -118,6 +186,7 @@ export class DatabaseService {
 
   /**
    * Upload a new PDF sheet music file into a group's repertoire
+   * Uploads to Supabase Storage and inserts record in Supabase scores table
    */
   static async uploadScoreToGroup(
     instanceCode: string,
@@ -132,7 +201,7 @@ export class DatabaseService {
     const scoreId = `score_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const fileName = `${scoreId}.pdf`;
 
-    // Ensure target local folder exists
+    // Ensure local document directory exists
     const dir = new Directory(Paths.document, 'refertoire_scores', instanceCode);
     try {
       if (!dir.exists) {
@@ -144,7 +213,7 @@ export class DatabaseService {
 
     let localFileUri = fileData.uri;
 
-    // Copy or write file to local app storage directory
+    // Save copy to local app storage
     try {
       const targetFile = new File(dir, fileName);
       if (Platform.OS !== 'web' && fileData.uri.startsWith('file://')) {
@@ -154,12 +223,36 @@ export class DatabaseService {
           localFileUri = targetFile.uri;
         }
       } else {
-        // On web or content URI, save URI reference
         localFileUri = targetFile.uri || fileData.uri;
       }
     } catch (copyErr) {
-      console.warn('Could not copy PDF to storage folder, using source URI:', copyErr);
+      console.warn('Could not copy PDF to storage folder:', copyErr);
       localFileUri = fileData.uri;
+    }
+
+    let cloudFileUrl = localFileUri;
+
+    // Upload to Supabase Storage bucket 'scores'
+    try {
+      const response = await fetch(fileData.uri);
+      const blob = await response.blob();
+      const storagePath = `${instanceCode}/${fileName}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('scores')
+        .upload(storagePath, blob, {
+          contentType: 'application/pdf',
+          upsert: true,
+        });
+
+      if (!uploadError && uploadData) {
+        const { data: urlData } = supabase.storage.from('scores').getPublicUrl(storagePath);
+        if (urlData?.publicUrl) {
+          cloudFileUrl = urlData.publicUrl;
+        }
+      }
+    } catch (storageErr) {
+      console.warn('Supabase storage upload notice (using local file):', storageErr);
     }
 
     const newScore: ScoreItem = {
@@ -173,7 +266,7 @@ export class DatabaseService {
       tempo: scoreData.tempo?.trim() || undefined,
       duration: scoreData.duration?.trim() || '3:00',
       pageCount: scoreData.pageCount || 2,
-      sourceUrl: localFileUri,
+      sourceUrl: cloudFileUrl,
       localUri: localFileUri,
       fileSize: fileData.size || 185000,
       downloadStatus: 'completed',
@@ -183,11 +276,31 @@ export class DatabaseService {
       addedAt: new Date().toISOString(),
     };
 
-    // Add to instance scores list
+    // Insert record in Supabase scores table
+    try {
+      await supabase.from('scores').insert({
+        instance_code: instanceCode,
+        title: newScore.title,
+        composer: newScore.composer,
+        arranger: newScore.arranger || null,
+        voicing: newScore.voicing,
+        season: newScore.season,
+        key_signature: newScore.keySignature || null,
+        tempo: newScore.tempo || null,
+        duration: newScore.duration,
+        page_count: newScore.pageCount,
+        file_url: cloudFileUrl,
+        file_size: newScore.fileSize,
+        notes: newScore.notes || null,
+        tags: newScore.tags,
+      });
+    } catch (dbErr) {
+      console.warn('Supabase DB score insert notice:', dbErr);
+    }
+
+    // Save to local instance catalog & cache
     instance.scores.unshift(newScore);
     instance.lastUpdated = new Date().toISOString();
-
-    // Persist to custom storage & cache
     await StorageService.saveCustomInstance(instance);
     await StorageService.saveLocalScoreUri(instanceCode, scoreId, localFileUri);
 
@@ -198,6 +311,12 @@ export class DatabaseService {
    * Delete a score from group
    */
   static async deleteScoreFromGroup(instanceCode: string, scoreId: string): Promise<void> {
+    try {
+      await supabase.from('scores').delete().eq('id', scoreId);
+    } catch {
+      // Ignored
+    }
+
     const instance = await this.getGroupByCode(instanceCode);
     if (!instance) return;
 
