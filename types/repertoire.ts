@@ -58,6 +58,25 @@ export interface Setlist {
   scoreIds: string[];
 }
 
+export interface UserProfile {
+  id: string;
+  email: string;
+  fullName: string;
+  voicePart?: string;
+  createdAt: string;
+}
+
+export interface EnsembleMember {
+  id: string;
+  instanceCode: string;
+  userId: string;
+  fullName: string;
+  email: string;
+  role: UserRole; // 'admin' | 'member'
+  voicePart?: string;
+  joinedAt: string;
+}
+
 export interface RepertoireInstance {
   code: string;
   name: string;
@@ -66,12 +85,14 @@ export interface RepertoireInstance {
   accompanist?: string;
   organization?: string;
   seasonName: string;
+  creatorId?: string; // ID of the user who created this ensemble (admin by default)
   adminKey?: string; // Key / token identifying group creator / admin
   isCustom?: boolean;
   createdDate?: string;
   scores: ScoreItem[];
   setlists: Setlist[];
   lastUpdated: string;
+  membersCount?: number;
 }
 
 export interface CreateGroupParams {

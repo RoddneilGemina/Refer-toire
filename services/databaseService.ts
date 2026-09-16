@@ -6,6 +6,8 @@ import {
   CreateGroupParams,
   UploadScoreData,
   UserRole,
+  UserProfile,
+  EnsembleMember,
 } from '@/types/repertoire';
 import { StorageService } from './storageService';
 import { supabase } from '@/lib/supabase';
@@ -41,10 +43,13 @@ export class DatabaseService {
   }
 
   /**
-   * Create a new, initially empty Refer-toire group
-   * Syncs to Supabase instances table and caches locally
+   * Create a new, initially empty Refer-toire group.
+   * The creating account is registered as ADMIN by default.
    */
-  static async createGroup(params: CreateGroupParams): Promise<{
+  static async createGroup(
+    params: CreateGroupParams,
+    currentUser?: UserProfile | null
+  ): Promise<{
     instance: RepertoireInstance;
     role: UserRole;
   }> {
@@ -61,15 +66,17 @@ export class DatabaseService {
       subtitle: params.subtitle?.trim() || `${params.director.trim()}'s Choir Repertoire`,
       director: params.director.trim(),
       seasonName: params.seasonName?.trim() || `${new Date().getFullYear()} Season`,
+      creatorId: currentUser?.id,
       adminKey,
       isCustom: true,
       createdDate: new Date().toISOString(),
       lastUpdated: new Date().toISOString(),
-      scores: [], // Starts completely empty
+      scores: [], // Starts completely clean
       setlists: [],
+      membersCount: 1,
     };
 
-    // 1. Persist to Supabase
+    // 1. Persist to Supabase instances table
     try {
       const { error: sbError } = await supabase.from('instances').insert({
         code: finalCode,
@@ -77,18 +84,47 @@ export class DatabaseService {
         director: newInstance.director,
         subtitle: newInstance.subtitle,
         season_name: newInstance.seasonName,
+        creator_id: currentUser?.id || null,
         admin_key: adminKey,
       });
       if (sbError) {
         console.warn('Supabase group insert notice:', sbError.message);
       }
+
+      // Automatically register creator in ensemble_members table as ADMIN
+      if (currentUser?.id) {
+        const { error: memberErr } = await supabase.from('ensemble_members').upsert({
+          instance_code: finalCode,
+          user_id: currentUser.id,
+          role: 'admin',
+          voice_part: currentUser.voicePart || 'General',
+          joined_at: new Date().toISOString(),
+        });
+        if (memberErr) {
+          console.warn('Supabase creator member insert notice:', memberErr.message);
+        }
+      }
     } catch (e) {
-      console.warn('Supabase offline fallback:', e);
+      console.warn('Supabase offline fallback for group create:', e);
     }
 
-    // 2. Always save locally for offline performance
+    // 2. Local persistence (Offline First)
     await StorageService.saveCustomInstance(newInstance);
     await StorageService.setUserRole(finalCode, 'admin');
+
+    if (currentUser) {
+      const initialMember: EnsembleMember = {
+        id: generateUUID(),
+        instanceCode: finalCode,
+        userId: currentUser.id,
+        fullName: currentUser.fullName,
+        email: currentUser.email,
+        role: 'admin',
+        voicePart: currentUser.voicePart,
+        joinedAt: new Date().toISOString(),
+      };
+      await StorageService.saveEnsembleMembers(finalCode, [initialMember]);
+    }
 
     return {
       instance: newInstance,
@@ -138,18 +174,34 @@ export class DatabaseService {
           addedAt: row.created_at,
         }));
 
+        // Count members
+        let membersCount = 1;
+        try {
+          const { count } = await supabase
+            .from('ensemble_members')
+            .select('*', { count: 'exact', head: true })
+            .eq('instance_code', code);
+          if (typeof count === 'number') {
+            membersCount = count;
+          }
+        } catch {
+          // Ignored
+        }
+
         const cloudInstance: RepertoireInstance = {
           code: instData.code,
           name: instData.name,
           director: instData.director,
           subtitle: instData.subtitle || undefined,
           seasonName: instData.season_name || 'Current Season',
+          creatorId: instData.creator_id || undefined,
           adminKey: instData.admin_key || undefined,
           isCustom: true,
           createdDate: instData.created_at,
           lastUpdated: instData.last_updated || instData.created_at,
           scores,
           setlists: [],
+          membersCount,
         };
 
         // Cache locally for offline use
@@ -173,18 +225,219 @@ export class DatabaseService {
       return cached;
     }
 
-    // 4. Code was not found in the database or offline cache
     return null;
   }
 
   /**
-   * Upload a new PDF sheet music file into a group's repertoire
-   * Uploads to Supabase Storage and inserts record in Supabase scores table
+   * Join an ensemble using code and track the user account in the database.
+   * If the user is the creator or already an admin, role 'admin' is preserved;
+   * otherwise, the user joins as 'member'.
+   */
+  static async joinGroupByCode(
+    rawCode: string,
+    currentUser?: UserProfile | null
+  ): Promise<{
+    instance: RepertoireInstance | null;
+    role: UserRole;
+    error?: string;
+  }> {
+    const code = rawCode.trim().toUpperCase();
+    if (!code) {
+      return { instance: null, role: 'member', error: 'Please enter an ensemble code.' };
+    }
+
+    const instance = await this.getGroupByCode(code);
+    if (!instance) {
+      return {
+        instance: null,
+        role: 'member',
+        error: `Ensemble code "${code}" not found. Verify the code with your director.`,
+      };
+    }
+
+    let role: UserRole = 'member';
+
+    // If user is creator, role is admin
+    if (currentUser?.id && instance.creatorId === currentUser.id) {
+      role = 'admin';
+    } else {
+      // Check stored role in local storage first
+      const storedRole = await StorageService.getUserRole(code);
+      if (storedRole === 'admin') {
+        role = 'admin';
+      }
+    }
+
+    // Record user in Supabase ensemble_members table
+    if (currentUser?.id) {
+      try {
+        // Check existing role in database
+        const { data: existingMember } = await supabase
+          .from('ensemble_members')
+          .select('role')
+          .eq('instance_code', code)
+          .eq('user_id', currentUser.id)
+          .maybeSingle();
+
+        if (existingMember?.role === 'admin') {
+          role = 'admin';
+        }
+
+        // Upsert member record
+        await supabase.from('ensemble_members').upsert({
+          instance_code: code,
+          user_id: currentUser.id,
+          role: role,
+          voice_part: currentUser.voicePart || 'General',
+          joined_at: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.warn('Could not record ensemble member in Supabase:', err);
+      }
+    }
+
+    // Save local state
+    await StorageService.setUserRole(code, role);
+    await StorageService.saveCachedInstance(instance);
+
+    if (currentUser) {
+      const members = await StorageService.getEnsembleMembers(code);
+      const existingIdx = members.findIndex(m => m.userId === currentUser.id);
+      if (existingIdx >= 0) {
+        members[existingIdx] = {
+          ...members[existingIdx],
+          role: role,
+          voicePart: currentUser.voicePart || members[existingIdx].voicePart,
+        };
+      } else {
+        members.push({
+          id: generateUUID(),
+          instanceCode: code,
+          userId: currentUser.id,
+          fullName: currentUser.fullName,
+          email: currentUser.email,
+          role: role,
+          voicePart: currentUser.voicePart,
+          joinedAt: new Date().toISOString(),
+        });
+      }
+      await StorageService.saveEnsembleMembers(code, members);
+    }
+
+    return { instance, role };
+  }
+
+  /**
+   * Retrieve all members of an ensemble.
+   * Returns a list sorted with Admins at the top, followed by Members.
+   */
+  static async getEnsembleMembers(instanceCode: string): Promise<EnsembleMember[]> {
+    const code = instanceCode.trim().toUpperCase();
+    if (!code) return [];
+
+    // 1. Try Supabase cloud query
+    try {
+      const { data: rows, error } = await supabase
+        .from('ensemble_members')
+        .select(`
+          id,
+          instance_code,
+          user_id,
+          role,
+          voice_part,
+          joined_at,
+          profiles:user_id (
+            id,
+            email,
+            full_name,
+            voice_part
+          )
+        `)
+        .eq('instance_code', code);
+
+      if (!error && rows && rows.length > 0) {
+        const members: EnsembleMember[] = rows.map((r: any) => ({
+          id: r.id,
+          instanceCode: r.instance_code,
+          userId: r.user_id,
+          fullName: r.profiles?.full_name || 'Ensemble Singer',
+          email: r.profiles?.email || '',
+          role: r.role === 'admin' ? 'admin' : 'member',
+          voicePart: r.voice_part || r.profiles?.voice_part || 'General',
+          joinedAt: r.joined_at,
+        }));
+
+        // Sort: Admins at top, then members
+        members.sort((a, b) => {
+          if (a.role === 'admin' && b.role !== 'admin') return -1;
+          if (a.role !== 'admin' && b.role === 'admin') return 1;
+          return a.fullName.localeCompare(b.fullName);
+        });
+
+        // Cache locally for offline use
+        await StorageService.saveEnsembleMembers(code, members);
+        return members;
+      }
+    } catch (e) {
+      console.warn('Error fetching ensemble members from Supabase:', e);
+    }
+
+    // 2. Offline fallback: load from local storage
+    const cached = await StorageService.getEnsembleMembers(code);
+    cached.sort((a, b) => {
+      if (a.role === 'admin' && b.role !== 'admin') return -1;
+      if (a.role !== 'admin' && b.role === 'admin') return 1;
+      return a.fullName.localeCompare(b.fullName);
+    });
+    return cached;
+  }
+
+  /**
+   * Promote a member to Admin. Only admins can perform this.
+   */
+  static async promoteMemberToAdmin(
+    instanceCode: string,
+    targetUserId: string
+  ): Promise<{ success: boolean; error?: string }> {
+    const code = instanceCode.trim().toUpperCase();
+
+    // 1. Update in Supabase
+    try {
+      const { error } = await supabase
+        .from('ensemble_members')
+        .update({ role: 'admin' })
+        .eq('instance_code', code)
+        .eq('user_id', targetUserId);
+
+      if (error) {
+        console.warn('Supabase promote notice:', error.message);
+      }
+    } catch (err) {
+      console.warn('Supabase offline promote error:', err);
+    }
+
+    // 2. Update in local cache
+    const members = await StorageService.getEnsembleMembers(code);
+    const updated = members.map(m => {
+      if (m.userId === targetUserId) {
+        return { ...m, role: 'admin' as UserRole };
+      }
+      return m;
+    });
+    await StorageService.saveEnsembleMembers(code, updated);
+
+    return { success: true };
+  }
+
+  /**
+   * Upload a new PDF sheet music file into a group's repertoire.
+   * Only admins can call this.
    */
   static async uploadScoreToGroup(
     instanceCode: string,
     scoreData: UploadScoreData,
-    fileData: { uri: string; name: string; size?: number }
+    fileData: { uri: string; name: string; size?: number },
+    uploaderId?: string
   ): Promise<ScoreItem> {
     const instance = await this.getGroupByCode(instanceCode);
     if (!instance) {
@@ -294,6 +547,7 @@ export class DatabaseService {
           file_size: newScore.fileSize,
           notes: newScore.notes || null,
           tags: newScore.tags,
+          uploaded_by: uploaderId || null,
         })
         .select()
         .single();
@@ -318,7 +572,7 @@ export class DatabaseService {
   }
 
   /**
-   * Delete a score from group
+   * Delete a score from group. Only admins can call this.
    */
   static async deleteScoreFromGroup(instanceCode: string, scoreId: string): Promise<void> {
     try {
@@ -333,5 +587,22 @@ export class DatabaseService {
     instance.scores = instance.scores.filter(s => s.id !== scoreId);
     instance.lastUpdated = new Date().toISOString();
     await StorageService.saveCustomInstance(instance);
+  }
+
+  /**
+   * Purge all uploaded ensembles and scores for a clean slate
+   */
+  static async purgeCleanSlateDatabase(): Promise<void> {
+    try {
+      // Delete scores and instances in cloud if permissions allow
+      await supabase.from('scores').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('ensemble_members').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('instances').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    } catch (e) {
+      console.warn('Cloud purge notice:', e);
+    }
+
+    // Clear all local storage
+    await StorageService.clearAllData();
   }
 }

@@ -8,7 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
-  Modal,
+  Alert,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,77 +18,163 @@ import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
 import { DatabaseService } from '@/services/databaseService';
 
-type TabMode = 'join' | 'create';
+type AuthMode = 'signin' | 'signup';
+type EnsembleMode = 'join' | 'create';
+
+const VOICE_OPTIONS = [
+  'Soprano 1',
+  'Soprano 2',
+  'Alto 1',
+  'Alto 2',
+  'Tenor 1',
+  'Tenor 2',
+  'Baritone',
+  'Bass',
+];
 
 export default function LoginScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme];
-  const { signInWithCode, createGroup, currentInstance, signOut } = useRepertoire();
+  const {
+    currentUser,
+    currentInstance,
+    signUp,
+    signIn,
+    signOutUser,
+    signInWithCode,
+    createGroup,
+    purgeCleanSlate,
+  } = useRepertoire();
 
-  const [activeTab, setActiveTab] = useState<TabMode>('join');
+  // Auth Form State
+  const [authMode, setAuthMode] = useState<AuthMode>('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [voicePart, setVoicePart] = useState('Tenor 1');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  // Join State
-  const [code, setCode] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [showCodeErrorModal, setShowCodeErrorModal] = useState(false);
-  const [notFoundCode, setNotFoundCode] = useState('');
-
-  // Create Group State
+  // Ensemble Form State
+  const [ensembleMode, setEnsembleMode] = useState<EnsembleMode>('join');
+  const [joinCode, setJoinCode] = useState('');
   const [ensembleName, setEnsembleName] = useState('');
-  const [directorName, setDirectorName] = useState('');
+  const [directorName, setDirectorName] = useState(currentUser?.fullName || '');
   const [seasonName, setSeasonName] = useState('');
   const [customCode, setCustomCode] = useState('');
+  const [ensembleLoading, setEnsembleLoading] = useState(false);
+  const [ensembleError, setEnsembleError] = useState<string | null>(null);
 
-  const handleSignIn = async (codeToUse?: string) => {
-    const targetCode = (codeToUse || code).trim().toUpperCase();
-    if (!targetCode) {
-      setErrorMessage('Please enter an access code.');
+  // 1. Handle User Sign Up
+  const handleSignUp = async () => {
+    if (!fullName.trim()) {
+      setAuthError('Please enter your full name.');
+      return;
+    }
+    if (!email.trim()) {
+      setAuthError('Please enter an email address.');
+      return;
+    }
+    if (password.length < 6) {
+      setAuthError('Password must be at least 6 characters.');
       return;
     }
 
-    setErrorMessage(null);
-    setLoading(true);
+    setAuthError(null);
+    setAuthLoading(true);
 
-    const res = await signInWithCode(targetCode);
-    setLoading(false);
+    const res = await signUp({
+      fullName: fullName.trim(),
+      email: email.trim(),
+      password,
+      voicePart,
+    });
+
+    setAuthLoading(false);
+
+    if (res.success) {
+      setDirectorName(fullName.trim());
+      // Stay on screen to join or create ensemble
+    } else {
+      setAuthError(res.error || 'Failed to create account.');
+    }
+  };
+
+  // 2. Handle User Sign In
+  const handleSignIn = async () => {
+    if (!email.trim() || !password) {
+      setAuthError('Please enter both email and password.');
+      return;
+    }
+
+    setAuthError(null);
+    setAuthLoading(true);
+
+    const res = await signIn({
+      email: email.trim(),
+      password,
+    });
+
+    setAuthLoading(false);
+
+    if (res.success) {
+      if (currentInstance) {
+        router.replace('/(tabs)');
+      }
+    } else {
+      setAuthError(res.error || 'Failed to sign in.');
+    }
+  };
+
+  // 3. Handle Joining Ensemble with Code
+  const handleJoinEnsemble = async () => {
+    const code = joinCode.trim().toUpperCase();
+    if (!code) {
+      setEnsembleError('Please enter an ensemble access code.');
+      return;
+    }
+
+    setEnsembleError(null);
+    setEnsembleLoading(true);
+
+    const res = await signInWithCode(code);
+    setEnsembleLoading(false);
 
     if (res.success) {
       router.replace('/(tabs)');
     } else {
-      const err = res.error || `Choir code "${targetCode}" does not exist in the database.`;
-      setErrorMessage(err);
-      setNotFoundCode(targetCode);
-      setShowCodeErrorModal(true);
+      setEnsembleError(res.error || `Ensemble code "${code}" not found.`);
     }
   };
 
-  const handleCreateGroup = async () => {
+  // 4. Handle Creating New Ensemble (Creator is Admin by default)
+  const handleCreateEnsemble = async () => {
     if (!ensembleName.trim()) {
-      setErrorMessage('Please enter an ensemble name.');
+      setEnsembleError('Please enter an ensemble name.');
       return;
     }
-    if (!directorName.trim()) {
-      setErrorMessage('Please enter the music director name.');
+    const finalDirector = (directorName || currentUser?.fullName || '').trim();
+    if (!finalDirector) {
+      setEnsembleError('Please specify the choir director name.');
       return;
     }
 
-    setErrorMessage(null);
-    setLoading(true);
+    setEnsembleError(null);
+    setEnsembleLoading(true);
 
     const res = await createGroup({
       name: ensembleName.trim(),
-      director: directorName.trim(),
+      director: finalDirector,
       seasonName: seasonName.trim() || undefined,
       customCode: customCode.trim() || undefined,
     });
 
-    setLoading(false);
+    setEnsembleLoading(false);
 
     if (res.success) {
       router.replace('/(tabs)');
     } else {
-      setErrorMessage(res.error || 'Failed to create group.');
+      setEnsembleError(res.error || 'Failed to create ensemble.');
     }
   };
 
@@ -100,345 +186,528 @@ export default function LoginScreen() {
     }
   };
 
+  const handleCleanSlatePurge = async () => {
+    if (Platform.OS === 'web') {
+      const confirmPurge = window.confirm(
+        'Are you sure you want to purge all test ensembles, scores, and offline caches for a completely clean slate?'
+      );
+      if (!confirmPurge) return;
+    }
+    await purgeCleanSlate();
+    setAuthError(null);
+    setEnsembleError(null);
+    Alert.alert('Clean Slate', 'All local and test data has been cleared.');
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardContainer}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          {/* Header & Logo */}
-          <View style={[styles.headerSection, { backgroundColor: 'transparent' }]}>
-            <View style={[styles.iconCircle, { backgroundColor: theme.surfaceSubtle }]}>
-              <Ionicons name="musical-notes" size={42} color={theme.tint} />
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled">
+          {/* Header Branding */}
+          <View style={[styles.headerContainer, { backgroundColor: 'transparent' }]}>
+            <View style={[styles.logoCircle, { backgroundColor: theme.badgeBackground }]}>
+              <Ionicons name="musical-notes" size={36} color={theme.tint} />
             </View>
-            <Text style={[styles.title, { color: theme.text }]}>Refer-toire</Text>
-            <Text style={[styles.subtitle, { color: theme.subtext }]}>
-              Choir Repertoire & Sheet Music Sync Engine
+            <Text style={[styles.appName, { color: theme.text }]}>Refer-toire</Text>
+            <Text style={[styles.appSub, { color: theme.subtext }]}>
+              Choir Repertoire & Digital Sheet Music Stand
             </Text>
           </View>
 
-          {/* Active Choir Status if already logged in */}
-          {currentInstance && (
+          {/* STEP 1: AUTHENTICATION (Sign In / Sign Up) */}
+          {!currentUser ? (
             <View
               style={[
-                styles.currentCard,
+                styles.mainCard,
                 { backgroundColor: theme.card, borderColor: theme.border },
               ]}>
-              <View style={[styles.currentCardHeader, { backgroundColor: 'transparent' }]}>
-                <Ionicons name="checkmark-circle" size={18} color={Colors.status.completed} />
-                <Text style={[styles.currentCardTitle, { color: theme.text }]}>
-                  Connected Ensemble
-                </Text>
-              </View>
-              <Text style={[styles.currentChoirName, { color: theme.tint }]}>
-                {currentInstance.name}
-              </Text>
-              <Text style={[styles.currentChoirCode, { color: theme.subtext }]}>
-                Access Code: {currentInstance.code} • {currentInstance.scores.length} scores
-              </Text>
-              <View style={[styles.cardActionsRow, { backgroundColor: 'transparent' }]}>
-                <TouchableOpacity
-                  style={[styles.returnButton, { flex: 1, backgroundColor: theme.tint }]}
-                  onPress={() => router.replace('/(tabs)')}>
-                  <Text style={[styles.returnButtonText, { color: '#FFFFFF' }]}>
-                    Open Library
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.disconnectButton, { flex: 1, backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}
-                  onPress={async () => {
-                    await signOut();
-                    setCode('');
-                  }}>
-                  <Text style={[styles.disconnectButtonText, { color: Colors.status.failed }]}>
-                    Disconnect
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-
-          {/* Mode Switcher Tabs */}
-          <View style={[styles.tabBar, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}>
-            <TouchableOpacity
-              style={[
-                styles.tabButton,
-                activeTab === 'join' && { backgroundColor: theme.card, shadowColor: '#000', elevation: 2 },
-              ]}
-              onPress={() => {
-                setActiveTab('join');
-                setErrorMessage(null);
-              }}>
-              <Ionicons
-                name="key-outline"
-                size={16}
-                color={activeTab === 'join' ? theme.tint : theme.subtext}
-                style={{ marginRight: 6 }}
-              />
-              <Text
-                style={[
-                  styles.tabButtonText,
-                  { color: activeTab === 'join' ? theme.text : theme.subtext },
-                ]}>
-                Enter Code
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.tabButton,
-                activeTab === 'create' && { backgroundColor: theme.card, shadowColor: '#000', elevation: 2 },
-              ]}
-              onPress={() => {
-                setActiveTab('create');
-                setErrorMessage(null);
-              }}>
-              <Ionicons
-                name="add-circle-outline"
-                size={16}
-                color={activeTab === 'create' ? theme.tint : theme.subtext}
-                style={{ marginRight: 6 }}
-              />
-              <Text
-                style={[
-                  styles.tabButtonText,
-                  { color: activeTab === 'create' ? theme.text : theme.subtext },
-                ]}>
-                Create Group
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* JOIN GROUP TAB CONTENT */}
-          {activeTab === 'join' ? (
-            <>
-              {/* Access Code Input */}
-              <View
-                style={[styles.inputCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-                <Text style={[styles.inputLabel, { color: theme.text }]}>Choir Access Code</Text>
-                <Text style={[styles.inputHint, { color: theme.subtext }]}>
-                  Enter the unique code for your choir to link and sync all scores offline
-                </Text>
-
-                <View
-                  style={[
-                    styles.inputRow,
-                    { borderColor: theme.border, backgroundColor: theme.surfaceSubtle },
-                  ]}>
-                  <Ionicons name="key-outline" size={20} color={theme.subtext} style={styles.inputIcon} />
-                  <TextInput
-                    style={[styles.inputField, { color: theme.text }]}
-                    placeholder="Enter Choir Access Code"
-                    placeholderTextColor={theme.subtext}
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                    value={code}
-                    onChangeText={t => {
-                      setCode(t.toUpperCase());
-                      setErrorMessage(null);
-                    }}
-                    onSubmitEditing={() => handleSignIn()}
-                    editable={!loading}
-                  />
-                  {code.length > 0 && (
-                    <TouchableOpacity onPress={() => setCode('')} style={styles.clearBtn}>
-                      <Ionicons name="close-circle" size={18} color={theme.subtext} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {errorMessage && (
-                  <View style={[styles.errorRow, { backgroundColor: 'transparent' }]}>
-                    <Ionicons name="alert-circle" size={16} color={Colors.status.failed} />
-                    <Text style={styles.errorText}>{errorMessage}</Text>
-                  </View>
-                )}
-
+              {/* Tab Switcher: Sign In vs Sign Up */}
+              <View style={[styles.tabBar, { backgroundColor: theme.surfaceSubtle }]}>
                 <TouchableOpacity
                   style={[
-                    styles.submitButton,
-                    { backgroundColor: theme.tint, opacity: loading ? 0.7 : 1 },
+                    styles.tabBtn,
+                    authMode === 'signin' && [styles.tabBtnActive, { backgroundColor: theme.card }],
                   ]}
-                  onPress={() => handleSignIn()}
-                  disabled={loading}>
-                  {loading ? (
-                    <ActivityIndicator color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <Ionicons
-                        name="cloud-download-outline"
-                        size={20}
-                        color="#FFFFFF"
-                        style={{ marginRight: 8 }}
-                      />
-                      <Text style={styles.submitButtonText}>Link & Sync Repertoire</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-
-            </>
-          ) : (
-            /* CREATE GROUP TAB CONTENT */
-            <View
-              style={[styles.inputCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-              <View style={[styles.adminBadgeRow, { backgroundColor: 'transparent' }]}>
-                <View style={[styles.crownBadge, { backgroundColor: theme.badgeBackground }]}>
-                  <Text style={[styles.crownBadgeText, { color: theme.badgeText }]}>
-                    👑 Group Creator / Admin
+                  onPress={() => {
+                    setAuthMode('signin');
+                    setAuthError(null);
+                  }}>
+                  <Ionicons
+                    name="log-in-outline"
+                    size={16}
+                    color={authMode === 'signin' ? theme.tint : theme.subtext}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text
+                    style={[
+                      styles.tabBtnText,
+                      { color: authMode === 'signin' ? theme.text : theme.subtext },
+                      authMode === 'signin' && styles.tabBtnTextActive,
+                    ]}>
+                    Sign In
                   </Text>
-                </View>
-              </View>
-              <Text style={[styles.inputLabel, { color: theme.text }]}>New Choir Repertoire</Text>
-              <Text style={[styles.inputHint, { color: theme.subtext }]}>
-                Initially, your repertoire will be empty. As the group admin, you can upload sheet music PDFs and invite members using your unique code.
-              </Text>
+                </TouchableOpacity>
 
-              {/* Ensemble Name */}
-              <Text style={[styles.fieldLabel, { color: theme.text }]}>Ensemble Name *</Text>
-              <TextInput
-                style={[
-                  styles.formInput,
-                  { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text },
-                ]}
-                placeholder="e.g. St. Cecilia Chamber Choir"
-                placeholderTextColor={theme.subtext}
-                value={ensembleName}
-                onChangeText={t => {
-                  setEnsembleName(t);
-                  setErrorMessage(null);
-                }}
-              />
-
-              {/* Director Name */}
-              <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 12 }]}>
-                Music Director *
-              </Text>
-              <TextInput
-                style={[
-                  styles.formInput,
-                  { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text },
-                ]}
-                placeholder="e.g. Dr. Julian Vance"
-                placeholderTextColor={theme.subtext}
-                value={directorName}
-                onChangeText={t => {
-                  setDirectorName(t);
-                  setErrorMessage(null);
-                }}
-              />
-
-              {/* Season / Year */}
-              <Text style={[styles.fieldLabel, { color: theme.text, marginTop: 12 }]}>
-                Season / Program Cycle
-              </Text>
-              <TextInput
-                style={[
-                  styles.formInput,
-                  { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, color: theme.text },
-                ]}
-                placeholder="e.g. 2026 Masterworks Cycle"
-                placeholderTextColor={theme.subtext}
-                value={seasonName}
-                onChangeText={setSeasonName}
-              />
-
-              {/* Unique Access Code */}
-              <View style={[styles.codeHeaderRow, { backgroundColor: 'transparent', marginTop: 12 }]}>
-                <Text style={[styles.fieldLabel, { color: theme.text }]}>Unique Choir Access Code</Text>
-                <TouchableOpacity onPress={handleSuggestCode}>
-                  <Text style={[styles.suggestLink, { color: theme.tint }]}>Auto-Generate</Text>
+                <TouchableOpacity
+                  style={[
+                    styles.tabBtn,
+                    authMode === 'signup' && [styles.tabBtnActive, { backgroundColor: theme.card }],
+                  ]}
+                  onPress={() => {
+                    setAuthMode('signup');
+                    setAuthError(null);
+                  }}>
+                  <Ionicons
+                    name="person-add-outline"
+                    size={16}
+                    color={authMode === 'signup' ? theme.tint : theme.subtext}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text
+                    style={[
+                      styles.tabBtnText,
+                      { color: authMode === 'signup' ? theme.text : theme.subtext },
+                      authMode === 'signup' && styles.tabBtnTextActive,
+                    ]}>
+                    Create Account
+                  </Text>
                 </TouchableOpacity>
               </View>
 
-              <TextInput
-                style={[
-                  styles.formInput,
-                  {
-                    backgroundColor: theme.surfaceSubtle,
-                    borderColor: theme.border,
-                    color: theme.text,
-                    fontWeight: '700',
-                    letterSpacing: 1,
-                  },
-                ]}
-                placeholder="e.g. CECILIA-2026 (or auto-generated)"
-                placeholderTextColor={theme.subtext}
-                autoCapitalize="characters"
-                value={customCode}
-                onChangeText={t => setCustomCode(t.toUpperCase())}
-              />
-
-              {errorMessage && (
-                <View style={[styles.errorRow, { backgroundColor: 'transparent', marginTop: 12 }]}>
-                  <Ionicons name="alert-circle" size={16} color={Colors.status.failed} />
-                  <Text style={styles.errorText}>{errorMessage}</Text>
+              {/* Error Message */}
+              {authError && (
+                <View style={[styles.errorBox, { backgroundColor: '#FEE2E2', borderColor: '#F87171' }]}>
+                  <Ionicons name="alert-circle" size={18} color="#DC2626" style={{ marginRight: 8 }} />
+                  <Text style={[styles.errorText, { color: '#B91C1C' }]}>{authError}</Text>
                 </View>
               )}
 
-              <TouchableOpacity
+              {/* Sign Up Fields */}
+              {authMode === 'signup' && (
+                <View style={{ backgroundColor: 'transparent' }}>
+                  <Text style={[styles.inputLabel, { color: theme.text }]}>Full Name</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: theme.surfaceSubtle,
+                        borderColor: theme.border,
+                        color: theme.text,
+                      },
+                    ]}
+                    placeholder="e.g. Julian Vance"
+                    placeholderTextColor={theme.subtext}
+                    value={fullName}
+                    onChangeText={setFullName}
+                    autoCapitalize="words"
+                  />
+
+                  <Text style={[styles.inputLabel, { color: theme.text }]}>Email Address</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: theme.surfaceSubtle,
+                        borderColor: theme.border,
+                        color: theme.text,
+                      },
+                    ]}
+                    placeholder="e.g. director@cathedralchoir.org"
+                    placeholderTextColor={theme.subtext}
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+
+                  <Text style={[styles.inputLabel, { color: theme.text }]}>Password (min 6 chars)</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: theme.surfaceSubtle,
+                        borderColor: theme.border,
+                        color: theme.text,
+                      },
+                    ]}
+                    placeholder="••••••••"
+                    placeholderTextColor={theme.subtext}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                  />
+
+                  <Text style={[styles.inputLabel, { color: theme.text }]}>Primary Voice Section</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.chipsScroll}>
+                    {VOICE_OPTIONS.map(v => {
+                      const isSel = voicePart === v;
+                      return (
+                        <TouchableOpacity
+                          key={v}
+                          style={[
+                            styles.chip,
+                            {
+                              backgroundColor: isSel ? theme.tint : theme.surfaceSubtle,
+                              borderColor: isSel ? theme.tint : theme.border,
+                            },
+                          ]}
+                          onPress={() => setVoicePart(v)}>
+                          <Text
+                            style={[
+                              styles.chipText,
+                              { color: isSel ? '#FFFFFF' : theme.text, fontWeight: isSel ? '700' : '500' },
+                            ]}>
+                            {v}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+
+                  <TouchableOpacity
+                    style={[styles.submitButton, { backgroundColor: theme.tint }]}
+                    onPress={handleSignUp}
+                    disabled={authLoading}>
+                    {authLoading ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                        <Text style={styles.submitButtonText}>Create Account</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Sign In Fields */}
+              {authMode === 'signin' && (
+                <View style={{ backgroundColor: 'transparent' }}>
+                  <Text style={[styles.inputLabel, { color: theme.text }]}>Email Address</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: theme.surfaceSubtle,
+                        borderColor: theme.border,
+                        color: theme.text,
+                      },
+                    ]}
+                    placeholder="e.g. singer@choir.org"
+                    placeholderTextColor={theme.subtext}
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+
+                  <Text style={[styles.inputLabel, { color: theme.text }]}>Password</Text>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      {
+                        backgroundColor: theme.surfaceSubtle,
+                        borderColor: theme.border,
+                        color: theme.text,
+                      },
+                    ]}
+                    placeholder="••••••••"
+                    placeholderTextColor={theme.subtext}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                  />
+
+                  <TouchableOpacity
+                    style={[styles.submitButton, { backgroundColor: theme.tint }]}
+                    onPress={handleSignIn}
+                    disabled={authLoading}>
+                    {authLoading ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Ionicons name="log-in-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                        <Text style={styles.submitButtonText}>Sign In to Account</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          ) : (
+            /* STEP 2: ENSEMBLE SELECTION (Logged In) */
+            <View style={{ gap: 16, backgroundColor: 'transparent' }}>
+              {/* Logged in User Profile Banner */}
+              <View
                 style={[
-                  styles.submitButton,
-                  { backgroundColor: theme.tint, opacity: loading ? 0.7 : 1, marginTop: 16 },
-                ]}
-                onPress={handleCreateGroup}
-                disabled={loading}>
-                {loading ? (
-                  <ActivityIndicator color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Ionicons name="add-circle-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
-                    <Text style={styles.submitButtonText}>Create Group & Open Library</Text>
-                  </>
+                  styles.profileBanner,
+                  { backgroundColor: theme.card, borderColor: theme.border },
+                ]}>
+                <View style={[styles.profileAvatar, { backgroundColor: theme.badgeBackground }]}>
+                  <Ionicons name="person" size={22} color={theme.tint} />
+                </View>
+                <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+                  <Text style={[styles.profileName, { color: theme.text }]}>{currentUser.fullName}</Text>
+                  <Text style={[styles.profileEmail, { color: theme.subtext }]}>
+                    {currentUser.email} • <Text style={{ color: theme.tint, fontWeight: '600' }}>{currentUser.voicePart || 'General'}</Text>
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.signOutBtn, { backgroundColor: theme.surfaceSubtle }]}
+                  onPress={signOutUser}>
+                  <Ionicons name="log-out-outline" size={16} color={Colors.status.failed} />
+                  <Text style={[styles.signOutText, { color: Colors.status.failed }]}>Log Out</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Already Connected Group shortcut */}
+              {currentInstance && (
+                <View
+                  style={[
+                    styles.currentGroupBanner,
+                    { backgroundColor: theme.badgeBackground, borderColor: theme.tint },
+                  ]}>
+                  <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+                    <Text style={[styles.currentGroupLabel, { color: theme.badgeText }]}>Active Repertoire</Text>
+                    <Text style={[styles.currentGroupName, { color: theme.text }]}>{currentInstance.name}</Text>
+                    <Text style={[styles.currentGroupCode, { color: theme.tint }]}>Code: {currentInstance.code}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.enterGroupBtn, { backgroundColor: theme.tint }]}
+                    onPress={() => router.replace('/(tabs)')}>
+                    <Text style={styles.enterGroupBtnText}>Open Scores</Text>
+                    <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 4 }} />
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Ensemble Tab Switcher: Join vs Create */}
+              <View
+                style={[
+                  styles.mainCard,
+                  { backgroundColor: theme.card, borderColor: theme.border },
+                ]}>
+                <View style={[styles.tabBar, { backgroundColor: theme.surfaceSubtle }]}>
+                  <TouchableOpacity
+                    style={[
+                      styles.tabBtn,
+                      ensembleMode === 'join' && [styles.tabBtnActive, { backgroundColor: theme.card }],
+                    ]}
+                    onPress={() => {
+                      setEnsembleMode('join');
+                      setEnsembleError(null);
+                    }}>
+                    <Ionicons
+                      name="key-outline"
+                      size={16}
+                      color={ensembleMode === 'join' ? theme.tint : theme.subtext}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text
+                      style={[
+                        styles.tabBtnText,
+                        { color: ensembleMode === 'join' ? theme.text : theme.subtext },
+                        ensembleMode === 'join' && styles.tabBtnTextActive,
+                      ]}>
+                      Join Ensemble
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.tabBtn,
+                      ensembleMode === 'create' && [styles.tabBtnActive, { backgroundColor: theme.card }],
+                    ]}
+                    onPress={() => {
+                      setEnsembleMode('create');
+                      setEnsembleError(null);
+                    }}>
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={16}
+                      color={ensembleMode === 'create' ? theme.tint : theme.subtext}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text
+                      style={[
+                        styles.tabBtnText,
+                        { color: ensembleMode === 'create' ? theme.text : theme.subtext },
+                        ensembleMode === 'create' && styles.tabBtnTextActive,
+                      ]}>
+                      Create Ensemble
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Ensemble Error Message */}
+                {ensembleError && (
+                  <View style={[styles.errorBox, { backgroundColor: '#FEE2E2', borderColor: '#F87171' }]}>
+                    <Ionicons name="alert-circle" size={18} color="#DC2626" style={{ marginRight: 8 }} />
+                    <Text style={[styles.errorText, { color: '#B91C1C' }]}>{ensembleError}</Text>
+                  </View>
                 )}
-              </TouchableOpacity>
+
+                {/* JOIN ENSEMBLE */}
+                {ensembleMode === 'join' && (
+                  <View style={{ backgroundColor: 'transparent' }}>
+                    <Text style={[styles.sectionTitle, { color: theme.text }]}>Enter Ensemble Access Code</Text>
+                    <Text style={[styles.sectionSub, { color: theme.subtext }]}>
+                      Ask your choir director for your group's 8-character access code.
+                    </Text>
+
+                    <TextInput
+                      style={[
+                        styles.codeInput,
+                        {
+                          backgroundColor: theme.surfaceSubtle,
+                          borderColor: theme.border,
+                          color: theme.tint,
+                        },
+                      ]}
+                      placeholder="e.g. CANTOR-4819"
+                      placeholderTextColor={theme.subtext}
+                      value={joinCode}
+                      onChangeText={val => setJoinCode(val.toUpperCase())}
+                      autoCapitalize="characters"
+                    />
+
+                    <TouchableOpacity
+                      style={[styles.submitButton, { backgroundColor: theme.tint }]}
+                      onPress={handleJoinEnsemble}
+                      disabled={ensembleLoading}>
+                      {ensembleLoading ? (
+                        <ActivityIndicator color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <Ionicons name="log-in-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                          <Text style={styles.submitButtonText}>Join Ensemble Repertoire</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {/* CREATE NEW ENSEMBLE */}
+                {ensembleMode === 'create' && (
+                  <View style={{ backgroundColor: 'transparent' }}>
+                    <View style={[styles.adminNoticeBadge, { backgroundColor: theme.badgeBackground }]}>
+                      <Ionicons name="sparkles" size={16} color={theme.tint} style={{ marginRight: 6 }} />
+                      <Text style={[styles.adminNoticeText, { color: theme.badgeText }]}>
+                        You will be assigned as <Text style={{ fontWeight: '700' }}>Admin / Director</Text> by default.
+                      </Text>
+                    </View>
+
+                    <Text style={[styles.inputLabel, { color: theme.text }]}>Ensemble / Choir Name</Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        {
+                          backgroundColor: theme.surfaceSubtle,
+                          borderColor: theme.border,
+                          color: theme.text,
+                        },
+                      ]}
+                      placeholder="e.g. Cathedral Chamber Choir"
+                      placeholderTextColor={theme.subtext}
+                      value={ensembleName}
+                      onChangeText={setEnsembleName}
+                    />
+
+                    <Text style={[styles.inputLabel, { color: theme.text }]}>Director Name</Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        {
+                          backgroundColor: theme.surfaceSubtle,
+                          borderColor: theme.border,
+                          color: theme.text,
+                        },
+                      ]}
+                      placeholder="e.g. Dr. Julian Vance"
+                      placeholderTextColor={theme.subtext}
+                      value={directorName}
+                      onChangeText={setDirectorName}
+                    />
+
+                    <Text style={[styles.inputLabel, { color: theme.text }]}>Season / Concert Name (Optional)</Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        {
+                          backgroundColor: theme.surfaceSubtle,
+                          borderColor: theme.border,
+                          color: theme.text,
+                        },
+                      ]}
+                      placeholder="e.g. 2026 Masterworks Cycle"
+                      placeholderTextColor={theme.subtext}
+                      value={seasonName}
+                      onChangeText={setSeasonName}
+                    />
+
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                      <Text style={[styles.inputLabel, { color: theme.text, marginTop: 0 }]}>Custom Access Code (Optional)</Text>
+                      <TouchableOpacity onPress={handleSuggestCode}>
+                        <Text style={[styles.suggestText, { color: theme.tint }]}>Suggest Code</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        {
+                          backgroundColor: theme.surfaceSubtle,
+                          borderColor: theme.border,
+                          color: theme.tint,
+                          fontWeight: '700',
+                          letterSpacing: 1,
+                        },
+                      ]}
+                      placeholder="e.g. CANTOR-2026"
+                      placeholderTextColor={theme.subtext}
+                      value={customCode}
+                      onChangeText={val => setCustomCode(val.toUpperCase())}
+                      autoCapitalize="characters"
+                    />
+
+                    <TouchableOpacity
+                      style={[styles.submitButton, { backgroundColor: theme.tint }]}
+                      onPress={handleCreateEnsemble}
+                      disabled={ensembleLoading}>
+                      {ensembleLoading ? (
+                        <ActivityIndicator color="#FFFFFF" />
+                      ) : (
+                        <>
+                          <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
+                          <Text style={styles.submitButtonText}>Create Ensemble & Become Director</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
             </View>
           )}
 
-          {/* Offline Rehearsal Notice */}
-          <View style={[styles.footerNotice, { backgroundColor: 'transparent' }]}>
-            <Ionicons name="shield-checkmark-outline" size={18} color={theme.subtext} />
-            <Text style={[styles.footerNoticeText, { color: theme.subtext }]}>
-              All sheet music PDFs are synchronized directly into device storage, keeping scores accessible during rehearsals and concerts without WiFi.
-            </Text>
+          {/* Clean Slate Purge Footer */}
+          <View style={[styles.footerContainer, { backgroundColor: 'transparent' }]}>
+            <TouchableOpacity
+              style={styles.cleanSlateBtn}
+              onPress={handleCleanSlatePurge}>
+              <Ionicons name="trash-outline" size={14} color={theme.subtext} style={{ marginRight: 4 }} />
+              <Text style={[styles.cleanSlateText, { color: theme.subtext }]}>
+                Clean Slate: Purge All Test Ensembles & Cache
+              </Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {/* Code Not Found Error Popup Modal */}
-      <Modal
-        visible={showCodeErrorModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowCodeErrorModal(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.errorModalCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
-            <View style={[styles.errorIconCircle, { backgroundColor: '#FEE2E2' }]}>
-              <Ionicons name="alert-circle" size={42} color="#DC2626" />
-            </View>
-
-            <Text style={[styles.errorModalTitle, { color: theme.text }]}>
-              Code Does Not Exist
-            </Text>
-
-            <Text style={[styles.errorModalMessage, { color: theme.subtext }]}>
-              The choir code <Text style={{ fontWeight: '700', color: theme.tint }}>{notFoundCode}</Text> was not found in the database.
-            </Text>
-
-            <Text style={[styles.errorModalSub, { color: theme.subtext }]}>
-              Please verify the code with your ensemble director, or connect to a verified choir group.
-            </Text>
-
-            <View style={styles.errorModalActions}>
-              <TouchableOpacity
-                style={[styles.modalActionButton, { backgroundColor: theme.tint }]}
-                onPress={() => setShowCodeErrorModal(false)}>
-                <Text style={styles.modalActionBtnText}>Try Another Code</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -447,337 +716,249 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  keyboardContainer: {
-    flex: 1,
-  },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 28,
-    paddingBottom: 40,
+    paddingTop: 32,
+    paddingBottom: 48,
+    maxWidth: 540,
+    width: '100%',
+    alignSelf: 'center',
   },
-  headerSection: {
+  headerContainer: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
-  iconCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
+  logoCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
   },
-  title: {
-    fontSize: 26,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    marginBottom: 4,
+  appName: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
   },
-  subtitle: {
-    fontSize: 13,
+  appSub: {
+    fontSize: 14,
+    marginTop: 4,
     textAlign: 'center',
-    lineHeight: 18,
-    maxWidth: 280,
+  },
+  mainCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   tabBar: {
     flexDirection: 'row',
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: 10,
     padding: 4,
-    marginBottom: 20,
+    marginBottom: 18,
   },
-  tabButton: {
+  tabBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  tabButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  currentCard: {
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    marginBottom: 18,
-  },
-  currentCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  currentCardTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  currentChoirName: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 2,
-  },
-  currentChoirCode: {
-    fontSize: 12,
-    marginBottom: 10,
-  },
-  cardActionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginTop: 4,
-  },
-  returnButton: {
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  returnButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  disconnectButton: {
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-  },
-  disconnectButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  inputCard: {
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  adminBadgeRow: {
-    marginBottom: 12,
-  },
-  crownBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 8,
     borderRadius: 8,
   },
-  crownBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
+  tabBtnActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  inputLabel: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  inputHint: {
+  tabBtnText: {
     fontSize: 13,
-    lineHeight: 18,
+    fontWeight: '600',
+  },
+  tabBtnTextActive: {
+    fontWeight: '700',
+  },
+  errorBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
     marginBottom: 16,
   },
-  fieldLabel: {
+  errorText: {
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '500',
+    flex: 1,
+  },
+  inputLabel: {
+    fontSize: 13,
+    fontWeight: '600',
     marginBottom: 6,
+    marginTop: 12,
   },
-  codeHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  suggestLink: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  formInput: {
-    height: 48,
-    borderRadius: 12,
+  input: {
+    height: 46,
+    borderRadius: 10,
     borderWidth: 1,
     paddingHorizontal: 14,
     fontSize: 14,
   },
-  inputRow: {
+  chipsScroll: {
     flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 12,
+    gap: 8,
+    paddingVertical: 6,
+  },
+  chip: {
     paddingHorizontal: 12,
-    height: 52,
-    marginBottom: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
   },
-  inputIcon: {
-    marginRight: 10,
-  },
-  inputField: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 1,
-  },
-  clearBtn: {
-    padding: 4,
-  },
-  errorRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 12,
-  },
-  errorText: {
-    color: Colors.status.failed,
-    fontSize: 13,
-    flex: 1,
+  chipText: {
+    fontSize: 12,
   },
   submitButton: {
+    height: 48,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
-    height: 50,
+    marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 3,
   },
   submitButtonText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
   },
-  demoSection: {
-    marginBottom: 20,
-  },
-  demoSectionTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-    marginBottom: 10,
-    paddingLeft: 4,
-  },
-  demoCard: {
+  profileBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     padding: 14,
     borderRadius: 14,
     borderWidth: 1,
-    marginBottom: 10,
+    gap: 12,
   },
-  demoCardLeft: {
-    flex: 1,
-    marginRight: 12,
+  profileAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  demoBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    marginBottom: 6,
-  },
-  demoBadgeText: {
-    fontSize: 11,
+  profileName: {
+    fontSize: 16,
     fontWeight: '700',
+  },
+  profileEmail: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  signOutText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  currentGroupBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
+  },
+  currentGroupLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  demoName: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  demoScoreCount: {
-    fontSize: 12,
-  },
-  footerNotice: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    paddingHorizontal: 4,
-  },
-  footerNoticeText: {
-    fontSize: 12,
-    lineHeight: 18,
-    flex: 1,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  errorModalCard: {
-    width: '100%',
-    maxWidth: 380,
-    borderRadius: 24,
-    borderWidth: 1,
-    padding: 24,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  errorIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  errorModalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  errorModalMessage: {
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 8,
-  },
-  errorModalSub: {
-    fontSize: 12,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 20,
-    opacity: 0.8,
-  },
-  errorModalActions: {
-    width: '100%',
-    gap: 10,
-  },
-  modalActionButton: {
-    width: '100%',
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalActionBtnText: {
-    color: '#FFFFFF',
+  currentGroupName: {
     fontSize: 15,
     fontWeight: '700',
+    marginTop: 2,
   },
-  modalSecondaryBtn: {
-    width: '100%',
-    height: 44,
-    borderRadius: 14,
-    borderWidth: 1,
+  currentGroupCode: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  enterGroupBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
-  modalSecondaryBtnText: {
+  enterGroupBtnText: {
+    color: '#FFFFFF',
     fontSize: 13,
+    fontWeight: '700',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  sectionSub: {
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  codeInput: {
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    paddingHorizontal: 16,
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: 2,
+    textAlign: 'center',
+  },
+  adminNoticeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  adminNoticeText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  suggestText: {
+    fontSize: 12,
     fontWeight: '600',
+  },
+  footerContainer: {
+    alignItems: 'center',
+    marginTop: 28,
+  },
+  cleanSlateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+  },
+  cleanSlateText: {
+    fontSize: 11,
+    textDecorationLine: 'underline',
   },
 });

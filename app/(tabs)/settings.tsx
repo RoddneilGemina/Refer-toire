@@ -18,6 +18,7 @@ import { useRepertoire } from '@/context/RepertoireContext';
 import { DownloadService } from '@/services/downloadService';
 import * as DocumentPicker from 'expo-document-picker';
 import UploadScoreModal, { SelectedPdfFile } from '@/components/UploadScoreModal';
+import EnsembleMembersModal from '@/components/EnsembleMembersModal';
 
 const VOICE_SECTIONS = [
   { id: 'Soprano 1', label: 'Soprano 1' },
@@ -34,18 +35,22 @@ export default function SettingsScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme];
   const {
+    currentUser,
     currentInstance,
     userRole,
+    ensembleMembers,
     scores,
     isSyncing,
     reSyncAll,
     clearOfflineCache,
     signOut,
+    signOutUser,
     preferredVoicePart,
     setPreferredVoicePart,
     uploadScore,
   } = useRepertoire();
 
+  const [showMembersModal, setShowMembersModal] = useState(false);
   const [resyncing, setResyncing] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isClearingCache, setIsClearingCache] = useState(false);
@@ -127,6 +132,40 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* User Account Card */}
+        {currentUser && (
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: theme.card, borderColor: theme.border },
+            ]}>
+            <View style={[styles.cardHeader, { backgroundColor: 'transparent' }]}>
+              <Text style={[styles.sectionTitle, { color: theme.text }]}>Signed In Account</Text>
+              <TouchableOpacity
+                onPress={async () => {
+                  await signOutUser();
+                  router.push('/login');
+                }}>
+                <Text style={[styles.switchLink, { color: Colors.status.failed }]}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.userProfileRow, { backgroundColor: 'transparent' }]}>
+              <View style={[styles.userAvatar, { backgroundColor: theme.badgeBackground }]}>
+                <Ionicons name="person" size={20} color={theme.tint} />
+              </View>
+              <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+                <Text style={[styles.userName, { color: theme.text }]}>{currentUser.fullName}</Text>
+                <Text style={[styles.userEmail, { color: theme.subtext }]}>{currentUser.email}</Text>
+              </View>
+              <View style={[styles.roleBadge, { backgroundColor: userRole === 'admin' ? theme.badgeBackground : theme.surfaceSubtle }]}>
+                <Text style={[styles.roleBadgeText, { color: userRole === 'admin' ? theme.badgeText : theme.subtext }]}>
+                  {userRole === 'admin' ? '👑 Admin' : '👤 Member'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* Active Ensemble & Role Card */}
         {currentInstance ? (
           <View
@@ -172,6 +211,27 @@ export default function SettingsScreen() {
                 {currentInstance.code}
               </Text>
             </View>
+
+            {/* View Ensemble Members Button */}
+            <TouchableOpacity
+              style={[
+                styles.membersNavBtn,
+                { backgroundColor: theme.surfaceSubtle, borderColor: theme.border },
+              ]}
+              onPress={() => setShowMembersModal(true)}>
+              <View style={[styles.membersNavLeft, { backgroundColor: 'transparent' }]}>
+                <Ionicons name="people" size={18} color={theme.tint} style={{ marginRight: 8 }} />
+                <Text style={[styles.membersNavTitle, { color: theme.text }]}>
+                  Ensemble Members
+                </Text>
+                <View style={[styles.memberCountBadge, { backgroundColor: theme.badgeBackground }]}>
+                  <Text style={[styles.memberCountText, { color: theme.badgeText }]}>
+                    {ensembleMembers.length}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={theme.subtext} />
+            </TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity
@@ -382,11 +442,64 @@ export default function SettingsScreen() {
         onClose={() => setPendingUploadFile(null)}
         onUpload={uploadScore}
       />
+      {/* Ensemble Members Roster Modal */}
+      <EnsembleMembersModal
+        visible={showMembersModal}
+        onClose={() => setShowMembersModal(false)}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  membersNavBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 14,
+  },
+  membersNavLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  membersNavTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginRight: 8,
+  },
+  memberCountBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  memberCountText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  userProfileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 8,
+  },
+  userAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userName: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  userEmail: {
+    fontSize: 12,
+    marginTop: 1,
+  },
   safeArea: {
     flex: 1,
   },
