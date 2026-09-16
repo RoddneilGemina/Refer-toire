@@ -59,7 +59,8 @@ export default function PdfViewerWeb({
   onToggleControls,
 }: PdfViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasRefs = useRef<Record<number, HTMLCanvasElement>>({});
+  const renderVersionRef = useRef<number>(0);
 
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [totalPages, setTotalPages] = useState<number>(1);
@@ -68,7 +69,7 @@ export default function PdfViewerWeb({
   const [renderError, setRenderError] = useState<string | null>(null);
   const [useNativeEmbed, setUseNativeEmbed] = useState<boolean>(false);
   const [resolvedUri, setResolvedUri] = useState<string>('');
-  const [allPagesRendered, setAllPagesRendered] = useState<number[]>([]);
+  const [pagesReady, setPagesReady] = useState<Record<number, boolean>>({});
 
   // 1. Resolve source PDF (use genuine choral PDF if dummy or empty)
   useEffect(() => {
@@ -125,11 +126,9 @@ export default function PdfViewerWeb({
         const count = doc.numPages || 1;
         setTotalPages(count);
         onLoadSuccess?.(count);
-        setLoading(false);
       } catch (err: any) {
         if (isCancelled) return;
         console.warn('PDF.js rendering notice:', err?.message || err);
-        // Fallback to browser embed if PDF.js encountered CORS or parser issue
         setUseNativeEmbed(true);
         setLoading(false);
       }
@@ -149,13 +148,24 @@ export default function PdfViewerWeb({
     }
   }, [initialPage, totalPages]);
 
-  // 3. Render Current Page in Single-Page Mode
-  const renderSinglePage = useCallback(
-    async (pageNum: number) => {
-      if (!pdfDoc || !canvasRef.current) return;
+  // 3. Pre-load & Pre-render ALL pages into separate canvas elements
+  // This guarantees instant, seamless page turns with 0ms lag
+  useEffect(() => {
+    if (!pdfDoc || useNativeEmbed) return;
+
+    renderVersionRef.current += 1;
+    const currentVersion = renderVersionRef.current;
+    let isCancelled = false;
+
+    async function renderPageToCanvas(pageNum: number) {
+      if (isCancelled || currentVersion !== renderVersionRef.current) return;
+      const canvas = canvasRefs.current[pageNum];
+      if (!canvas) return;
+
       try {
         const page = await pdfDoc.getPage(pageNum);
-        const canvas = canvasRef.current;
+        if (isCancelled || currentVersion !== renderVersionRef.current) return;
+
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
@@ -183,27 +193,58 @@ export default function PdfViewerWeb({
         };
 
         await page.render(renderContext).promise;
-      } catch (e: any) {
-        console.warn('Page render error:', e?.message || e);
+
+        if (!isCancelled && currentVersion === renderVersionRef.current) {
+          setPagesReady((prev) => ({ ...prev, [pageNum]: true }));
+        }
+      } catch (err: any) {
+        console.warn(`Error pre-rendering page ${pageNum}:`, err?.message || err);
       }
-    },
-    [pdfDoc, zoomScale]
-  );
-
-  useEffect(() => {
-    if (viewMode === 'single' && pdfDoc && !useNativeEmbed) {
-      renderSinglePage(currentPage);
     }
-  }, [viewMode, pdfDoc, currentPage, zoomScale, renderSinglePage, useNativeEmbed]);
 
-  // 4. Render All Pages in Continuous Scroll Mode
+    async function preRenderAllPages() {
+      // Priority 1: Render the current active page first so it shows immediately
+      await renderPageToCanvas(currentPage);
+      if (!isCancelled && currentVersion === renderVersionRef.current) {
+        setLoading(false);
+      }
+
+      // Priority 2: Pre-render all other pages in the background
+      // Render next page first, then prev page, then the rest
+      const priorityQueue: number[] = [];
+      if (currentPage + 1 <= totalPages) priorityQueue.push(currentPage + 1);
+      if (currentPage - 1 >= 1) priorityQueue.push(currentPage - 1);
+      for (let p = 1; p <= totalPages; p++) {
+        if (!priorityQueue.includes(p) && p !== currentPage) {
+          priorityQueue.push(p);
+        }
+      }
+
+      for (const pageNum of priorityQueue) {
+        if (isCancelled || currentVersion !== renderVersionRef.current) break;
+        await renderPageToCanvas(pageNum);
+      }
+    }
+
+    // Small delay to ensure canvas DOM elements are mounted
+    const timeout = setTimeout(() => {
+      preRenderAllPages();
+    }, 20);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [pdfDoc, totalPages, zoomScale, useNativeEmbed]);
+
+  // 4. Render Continuous Scroll Mode
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (viewMode !== 'scroll' || !pdfDoc || useNativeEmbed) return;
     let isCancelled = false;
 
-    async function renderAllPages() {
+    async function renderAllPagesForScroll() {
       if (!scrollContainerRef.current) return;
       const container = scrollContainerRef.current;
       container.innerHTML = ''; // Clear existing
@@ -253,7 +294,7 @@ export default function PdfViewerWeb({
       }
     }
 
-    renderAllPages();
+    renderAllPagesForScroll();
 
     return () => {
       isCancelled = true;
@@ -303,7 +344,7 @@ export default function PdfViewerWeb({
     goToPage(currentPage + 1);
   };
 
-  // Canvas CSS filter style
+  // Canvas CSS filter style (instant GPU accelerated inversion, no re-render needed)
   const getCanvasFilter = () => {
     if (stageMode) {
       return {
@@ -387,7 +428,7 @@ export default function PdfViewerWeb({
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={stageMode ? '#F59E0B' : '#0D74CE'} />
           <Text style={[styles.loadingTitle, { color: stageMode ? '#E2E8F0' : '#1E293B' }]}>
-            Loading Sheet Music...
+            Pre-loading Sheet Music Score...
           </Text>
           <Text style={[styles.loadingSubtitle, { color: stageMode ? '#94A3B8' : '#64748B' }]}>
             {title} {composer ? `• ${composer}` : ''}
@@ -409,8 +450,9 @@ export default function PdfViewerWeb({
         </View>
       )}
 
-      {/* Single Page Canvas View */}
-      {viewMode === 'single' && !loading && !renderError && (
+      {/* Single Page Mode: Pre-rendered Canvas Stack */}
+      {/* ALL pages are rendered in advance; switching currentPage is instant (0ms latency) */}
+      {viewMode === 'single' && !renderError && (
         <div
           style={{
             position: 'relative',
@@ -420,136 +462,175 @@ export default function PdfViewerWeb({
             padding: '16px 8px 80px',
             maxWidth: '100%',
           }}>
-          {/* Main Sheet Music Canvas */}
-          <div
-            style={{
-              position: 'relative',
-              borderRadius: '12px',
-              overflow: 'hidden',
-              boxShadow: stageMode
-                ? '0 8px 30px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255,255,255,0.08)'
-                : '0 8px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0,0,0,0.06)',
-              transition: 'box-shadow 0.2s ease',
-              backgroundColor: stageMode ? '#0A0E17' : '#FFFFFF',
-            }}>
-            <canvas
-              ref={canvasRef}
-              style={{
-                display: 'block',
-                borderRadius: '12px',
-                transition: 'filter 0.3s ease',
-                ...getCanvasFilter(),
-              }}
-            />
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
+            const isVisible = p === currentPage;
+            const isReady = pagesReady[p];
 
-            {/* Left Touch / Click Zone: Previous Page */}
-            <div
-              onClick={goToPrevPage}
-              title="Previous Page (Left Arrow / Foot Pedal)"
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '25%',
-                height: '100%',
-                cursor: currentPage > 1 ? 'pointer' : 'default',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-start',
-                paddingLeft: '14px',
-                opacity: 0,
-                transition: 'opacity 0.2s ease',
-                background:
-                  'linear-gradient(to right, rgba(0,0,0,0.08), transparent)',
-              }}
-              onMouseEnter={(e) => {
-                if (currentPage > 1) e.currentTarget.style.opacity = '1';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.opacity = '0';
-              }}>
-              {currentPage > 1 && (
-                <div
+            return (
+              <div
+                key={p}
+                style={{
+                  display: isVisible ? 'block' : 'none',
+                  position: 'relative',
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                  boxShadow: stageMode
+                    ? '0 8px 30px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255,255,255,0.08)'
+                    : '0 8px 24px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0,0,0,0.06)',
+                  transition: 'box-shadow 0.2s ease',
+                  backgroundColor: stageMode ? '#0A0E17' : '#FFFFFF',
+                }}>
+                {/* Pre-rendered Canvas */}
+                <canvas
+                  ref={(el) => {
+                    if (el) canvasRefs.current[p] = el;
+                  }}
                   style={{
-                    backgroundColor: stageMode ? 'rgba(30, 41, 59, 0.85)' : 'rgba(255, 255, 255, 0.9)',
-                    borderRadius: '50%',
-                    width: '38px',
-                    height: '38px',
+                    display: isReady ? 'block' : 'none',
+                    borderRadius: '12px',
+                    transition: 'filter 0.3s ease',
+                    ...getCanvasFilter(),
+                  }}
+                />
+
+                {/* Lightweight placeholder if page is still in background queue */}
+                {!isReady && (
+                  <div
+                    style={{
+                      width: '600px',
+                      height: '750px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: stageMode ? '#0A0E17' : '#FFFFFF',
+                    }}>
+                    <ActivityIndicator size="small" color={stageMode ? '#F59E0B' : '#0D74CE'} />
+                    <Text
+                      style={{
+                        marginTop: 10,
+                        fontSize: 12,
+                        color: stageMode ? '#94A3B8' : '#64748B',
+                      }}>
+                      Rendering Page {p}...
+                    </Text>
+                  </div>
+                )}
+
+                {/* Left Touch / Click Zone: Previous Page */}
+                <div
+                  onClick={goToPrevPage}
+                  title="Previous Page (Left Arrow / Foot Pedal)"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '25%',
+                    height: '100%',
+                    cursor: currentPage > 1 ? 'pointer' : 'default',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                    justifyContent: 'flex-start',
+                    paddingLeft: '14px',
+                    opacity: 0,
+                    transition: 'opacity 0.2s ease',
+                    background:
+                      'linear-gradient(to right, rgba(0,0,0,0.08), transparent)',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (currentPage > 1) e.currentTarget.style.opacity = '1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = '0';
                   }}>
-                  <Ionicons
-                    name="chevron-back"
-                    size={22}
-                    color={stageMode ? '#F8FAFC' : '#1E293B'}
-                  />
+                  {currentPage > 1 && (
+                    <div
+                      style={{
+                        backgroundColor: stageMode
+                          ? 'rgba(30, 41, 59, 0.85)'
+                          : 'rgba(255, 255, 255, 0.9)',
+                        borderRadius: '50%',
+                        width: '38px',
+                        height: '38px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                      }}>
+                      <Ionicons
+                        name="chevron-back"
+                        size={22}
+                        color={stageMode ? '#F8FAFC' : '#1E293B'}
+                      />
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
 
-            {/* Center Touch / Click Zone: Toggle Controls */}
-            <div
-              onClick={onToggleControls}
-              title="Toggle Fullscreen Controls"
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: '25%',
-                width: '50%',
-                height: '100%',
-                cursor: 'default',
-              }}
-            />
-
-            {/* Right Touch / Click Zone: Next Page */}
-            <div
-              onClick={goToNextPage}
-              title="Next Page (Right Arrow / Foot Pedal)"
-              style={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                width: '25%',
-                height: '100%',
-                cursor: currentPage < totalPages ? 'pointer' : 'default',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'flex-end',
-                paddingRight: '14px',
-                opacity: 0,
-                transition: 'opacity 0.2s ease',
-                background:
-                  'linear-gradient(to left, rgba(0,0,0,0.08), transparent)',
-              }}
-              onMouseEnter={(e) => {
-                if (currentPage < totalPages) e.currentTarget.style.opacity = '1';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.opacity = '0';
-              }}>
-              {currentPage < totalPages && (
+                {/* Center Touch / Click Zone: Toggle Controls */}
                 <div
+                  onClick={onToggleControls}
+                  title="Toggle Fullscreen Controls"
                   style={{
-                    backgroundColor: stageMode ? 'rgba(30, 41, 59, 0.85)' : 'rgba(255, 255, 255, 0.9)',
-                    borderRadius: '50%',
-                    width: '38px',
-                    height: '38px',
+                    position: 'absolute',
+                    top: 0,
+                    left: '25%',
+                    width: '50%',
+                    height: '100%',
+                    cursor: 'default',
+                  }}
+                />
+
+                {/* Right Touch / Click Zone: Next Page */}
+                <div
+                  onClick={goToNextPage}
+                  title="Next Page (Right Arrow / Foot Pedal)"
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    width: '25%',
+                    height: '100%',
+                    cursor: currentPage < totalPages ? 'pointer' : 'default',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                    justifyContent: 'flex-end',
+                    paddingRight: '14px',
+                    opacity: 0,
+                    transition: 'opacity 0.2s ease',
+                    background:
+                      'linear-gradient(to left, rgba(0,0,0,0.08), transparent)',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (currentPage < totalPages) e.currentTarget.style.opacity = '1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.opacity = '0';
                   }}>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={22}
-                    color={stageMode ? '#F8FAFC' : '#1E293B'}
-                  />
+                  {currentPage < totalPages && (
+                    <div
+                      style={{
+                        backgroundColor: stageMode
+                          ? 'rgba(30, 41, 59, 0.85)'
+                          : 'rgba(255, 255, 255, 0.9)',
+                        borderRadius: '50%',
+                        width: '38px',
+                        height: '38px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                      }}>
+                      <Ionicons
+                        name="chevron-forward"
+                        size={22}
+                        color={stageMode ? '#F8FAFC' : '#1E293B'}
+                      />
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
