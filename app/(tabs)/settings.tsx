@@ -331,7 +331,9 @@ export default function SettingsScreen() {
         </View>
 
         {/* Network & Offline Mode Card */}
-        <View
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => setOfflineMode(!isOfflineMode)}
           style={[
             styles.card,
             { backgroundColor: theme.card, borderColor: theme.border },
@@ -350,7 +352,7 @@ export default function SettingsScreen() {
               </View>
               <Text style={[styles.sectionSub, { color: theme.subtext, marginTop: 4, marginBottom: 0 }]}>
                 {isOfflineMode
-                  ? 'App uses cached repertoire with 0ms network latency. Switch off to sync new scores and member updates.'
+                  ? 'App uses cached repertoire with 0ms network latency. Tap to restore online sync.'
                   : 'Live synchronization is active. Changes and updates from the director will sync automatically.'}
               </Text>
             </View>
@@ -361,7 +363,7 @@ export default function SettingsScreen() {
               thumbColor={isOfflineMode ? '#FFFFFF' : '#F3F4F6'}
             />
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Offline Storage Engine */}
         <View

@@ -15,6 +15,7 @@ import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
 import { Setlist, ScoreItem } from '@/types/repertoire';
 import ProgramEditorModal from '@/components/ProgramEditorModal';
+import NetworkStatusBar from '@/components/NetworkStatusBar';
 
 export default function SetlistsScreen() {
   const colorScheme = useColorScheme();
@@ -262,6 +263,8 @@ export default function SetlistsScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      <NetworkStatusBar />
 
       <FlatList
         data={setlists}

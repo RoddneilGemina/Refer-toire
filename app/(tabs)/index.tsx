@@ -18,6 +18,7 @@ import { ScoreItem, Voicing, LiturgicalSeason, PieceGenre } from '@/types/repert
 import { SORT_OPTIONS } from '@/utils/sorting';
 import * as DocumentPicker from 'expo-document-picker';
 import UploadScoreModal, { SelectedPdfFile } from '@/components/UploadScoreModal';
+import NetworkStatusBar from '@/components/NetworkStatusBar';
 
 const VOICING_FILTERS: Array<Voicing | 'ALL'> = ['ALL', 'SATB', 'SSAA', 'TTBB', 'SAB'];
 const SEASON_FILTERS: Array<LiturgicalSeason | 'ALL'> = ['ALL', 'Lent', 'Holy Week', 'Christmas', 'Concert', 'Evensong', 'General'];
@@ -230,30 +231,6 @@ export default function RepertoireLibraryScreen() {
 
         <View style={styles.headerRightActions}>
           <TouchableOpacity
-            style={[
-              styles.modePill,
-              {
-                backgroundColor: isOfflineMode ? '#FEE2E2' : '#DCFCE7',
-                borderColor: isOfflineMode ? '#F87171' : '#86EFAC',
-              },
-            ]}
-            onPress={() => setOfflineMode(!isOfflineMode)}>
-            <Ionicons
-              name={isOfflineMode ? 'airplane' : 'cloud-done'}
-              size={12}
-              color={isOfflineMode ? '#DC2626' : '#16A34A'}
-              style={{ marginRight: 4 }}
-            />
-            <Text
-              style={[
-                styles.modePillText,
-                { color: isOfflineMode ? '#DC2626' : '#16A34A' },
-              ]}>
-              {isOfflineMode ? 'Offline' : 'Online'}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
             style={[styles.syncBadge, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}
             onPress={() => reSyncAll()}
             disabled={isSyncing}>
@@ -282,6 +259,9 @@ export default function RepertoireLibraryScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Network Connectivity Status Banner (Thin banner below the bar of account & code details) */}
+      <NetworkStatusBar />
 
       {/* Search Bar & Filter Toggle */}
       <View style={[styles.searchSection, { backgroundColor: 'transparent' }]}>

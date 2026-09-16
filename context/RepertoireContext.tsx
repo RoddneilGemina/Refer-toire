@@ -18,6 +18,7 @@ import { AuthService, SignUpParams, SignInParams } from '@/services/authService'
 import { DatabaseService } from '@/services/databaseService';
 import { DownloadService } from '@/services/downloadService';
 import { StorageService } from '@/services/storageService';
+import { NetworkService } from '@/services/networkService';
 import { SORT_OPTIONS, sortScores, filterScores } from '@/utils/sorting';
 
 interface RepertoireContextValue {
@@ -203,6 +204,30 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
     initSession();
   }, [syncScoresForInstance]);
 
+  // Automatic Online / Offline synchronization based on real-time internet connectivity
+  useEffect(() => {
+    const unsubscribe = NetworkService.subscribe((isOnline) => {
+      const offline = !isOnline;
+      setIsOfflineModeState(offline);
+      StorageService.setOfflineMode(offline);
+
+      if (isOnline && currentInstance) {
+        // Automatically refresh cloud instance and sync when internet access is restored
+        DatabaseService.getGroupByCode(currentInstance.code).then(fresh => {
+          if (fresh) {
+            setCurrentInstance(fresh);
+            syncScoresForInstance(fresh);
+          }
+        });
+        loadEnsembleMembers();
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentInstance, syncScoresForInstance, loadEnsembleMembers]);
+
   // Handle Sign Up
   const signUp = async (params: SignUpParams) => {
     const res = await AuthService.signUp(params);
@@ -384,6 +409,7 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
 
   // Set Offline Mode toggle
   const setOfflineMode = async (enabled: boolean) => {
+    NetworkService.setSimulatedStatus(!enabled);
     await StorageService.setOfflineMode(enabled);
     setIsOfflineModeState(enabled);
     if (!enabled && currentInstance) {
