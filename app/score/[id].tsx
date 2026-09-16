@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   TouchableOpacity,
@@ -143,13 +143,26 @@ export default function ScoreViewerScreen() {
     setZoomScale(1.0);
   };
 
-  const handlePrevPage = () => {
+  const handlePrevPage = useCallback(() => {
     setCurrentPage((prev) => Math.max(1, prev - 1));
-  };
+  }, []);
 
-  const handleNextPage = () => {
+  const handleNextPage = useCallback(() => {
     setCurrentPage((prev) => Math.min(totalPages, prev + 1));
-  };
+  }, [totalPages]);
+
+  const handlePageChange = useCallback((p: number, total: number) => {
+    setCurrentPage(p);
+    setTotalPages(total);
+  }, []);
+
+  const handleLoadSuccess = useCallback((total: number) => {
+    setTotalPages(total);
+  }, []);
+
+  const handleToggleControls = useCallback(() => {
+    setShowControls((prev) => !prev);
+  }, []);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: activeBg }]}>
@@ -323,19 +336,12 @@ export default function ScoreViewerScreen() {
           sepiaMode={sepiaMode}
           viewMode={viewMode}
           zoomScale={zoomScale}
-          onPageChange={(p, total) => {
-            setCurrentPage(p);
-            setTotalPages(total);
-          }}
-          onLoadSuccess={(total) => {
-            setTotalPages(total);
-          }}
+          onPageChange={handlePageChange}
+          onLoadSuccess={handleLoadSuccess}
           onError={(err) => {
             console.warn('ScoreViewer PDF notice:', err);
           }}
-          onToggleControls={() => {
-            setShowControls((prev) => !prev);
-          }}
+          onToggleControls={handleToggleControls}
         />
 
         {/* Page Turn Floating Controls (Single Page Mode) */}

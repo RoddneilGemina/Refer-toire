@@ -38,6 +38,8 @@ export class ChoralPdfService {
     return this.generateChoralScorePdfDataUri(score);
   }
 
+  private static pdfCache = new Map<string, string>();
+
   /**
    * Generate a multi-page valid PDF data URI containing choral staves, lyrics, and metadata
    */
@@ -49,6 +51,11 @@ export class ChoralPdfService {
     const tempo = score.tempo || 'Adagio (♩ = 60)';
     const season = score.season || 'General';
     const pageCount = Math.max(score.pageCount || 3, 2);
+
+    const cacheKey = `${title}__${composer}__${voicing}__${key}__${tempo}__${season}__${pageCount}`;
+    if (this.pdfCache.has(cacheKey)) {
+      return this.pdfCache.get(cacheKey)!;
+    }
 
     const pagesContent: string[] = [];
 
@@ -104,7 +111,9 @@ export class ChoralPdfService {
       pagesContent.push(pStream);
     }
 
-    return buildPdfDataUri(pagesContent);
+    const result = buildPdfDataUri(pagesContent);
+    this.pdfCache.set(cacheKey, result);
+    return result;
   }
 }
 
