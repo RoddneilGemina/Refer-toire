@@ -9,6 +9,7 @@ import {
   Share,
   Platform,
   Switch,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -464,9 +465,14 @@ export default function SettingsScreen() {
         )}
 
         {/* Footer info */}
-        <View style={[styles.appFooter, { backgroundColor: 'transparent' }]}>
+        <View style={[styles.appFooter, { backgroundColor: 'transparent', alignItems: 'center' }]}>
+          <Image
+            source={require('@/assets/images/refertoire-logo.png')}
+            style={{ width: 48, height: 48, marginBottom: 8 }}
+            resizeMode="contain"
+          />
           <Text style={[styles.appFooterText, { color: theme.subtext }]}>
-            Refer-toire Choir Sync v1.0.0
+            Refertoire Choir Sync v1.0.0
           </Text>
           <Text style={[styles.appFooterSub, { color: theme.subtext }]}>
             Built with Expo SDK 57 & React Native

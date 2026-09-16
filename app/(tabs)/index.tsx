@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   ScrollView,
   SafeAreaView,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -204,10 +205,15 @@ export default function RepertoireLibraryScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
       {/* App & Choir Header */}
       <View style={[styles.header, { borderBottomColor: theme.border }]}>
+        <Image
+          source={require('@/assets/images/refertoire-logo.png')}
+          style={{ width: 42, height: 42, marginRight: 10, alignSelf: 'center' }}
+          resizeMode="contain"
+        />
         <View style={{ flex: 1, backgroundColor: 'transparent' }}>
           <View style={[styles.titleBadgeRow, { backgroundColor: 'transparent' }]}>
             <Text style={[styles.choirName, { color: theme.text }]} numberOfLines={1}>
-              {currentInstance?.name || 'Refer-toire'}
+              {currentInstance?.name || 'Refertoire'}
             </Text>
             <View
               style={[

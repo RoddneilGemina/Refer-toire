@@ -9,6 +9,7 @@ import {
   Platform,
   SafeAreaView,
   Alert,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -207,15 +208,13 @@ export default function LoginScreen() {
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled">
-          {/* Header Branding */}
+          {/* Header Branding: HD Logo */}
           <View style={[styles.headerContainer, { backgroundColor: 'transparent' }]}>
-            <View style={[styles.logoCircle, { backgroundColor: theme.badgeBackground }]}>
-              <Ionicons name="musical-notes" size={36} color={theme.tint} />
-            </View>
-            <Text style={[styles.appName, { color: theme.text }]}>Refer-toire</Text>
-            <Text style={[styles.appSub, { color: theme.subtext }]}>
-              Choir Repertoire & Digital Sheet Music Stand
-            </Text>
+            <Image
+              source={require('@/assets/images/refertoire-logo.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
 
           {/* STEP 1: AUTHENTICATION (Sign In / Sign Up) */}
@@ -728,23 +727,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 24,
   },
-  logoCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  appName: {
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  appSub: {
-    fontSize: 14,
-    marginTop: 4,
-    textAlign: 'center',
+  logoImage: {
+    width: 210,
+    height: 210,
+    alignSelf: 'center',
   },
   mainCard: {
     borderRadius: 16,

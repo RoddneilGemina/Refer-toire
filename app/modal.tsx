@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { Platform, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { Platform, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Text, View } from '@/components/Themed';
@@ -15,11 +15,12 @@ export default function InfoModalScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={[styles.iconCircle, { backgroundColor: theme.surfaceSubtle }]}>
-          <Ionicons name="musical-notes" size={40} color={theme.tint} />
-        </View>
+        <Image
+          source={require('@/assets/images/refertoire-logo.png')}
+          style={styles.modalLogo}
+          resizeMode="contain"
+        />
 
-        <Text style={[styles.title, { color: theme.text }]}>About Refer-toire</Text>
         <Text style={[styles.subtitle, { color: theme.subtext }]}>
           Choir Repertoire & Sheet Music Sync Engine
         </Text>
@@ -96,19 +97,12 @@ const styles = StyleSheet.create({
     padding: 24,
     alignItems: 'center',
   },
-  iconCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 4,
+  modalLogo: {
+    width: 160,
+    height: 160,
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 8,
   },
   subtitle: {
     fontSize: 13,
