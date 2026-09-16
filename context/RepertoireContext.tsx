@@ -6,6 +6,8 @@ import {
   SortOption,
   Voicing,
   LiturgicalSeason,
+  PieceGenre,
+  Setlist,
   UserRole,
   CreateGroupParams,
   UploadScoreData,
@@ -37,8 +39,12 @@ interface RepertoireContextValue {
   setVoicingFilter: (v: Voicing | 'ALL') => void;
   seasonFilter: LiturgicalSeason | 'ALL';
   setSeasonFilter: (s: LiturgicalSeason | 'ALL') => void;
+  genreFilter: PieceGenre | 'ALL';
+  setGenreFilter: (g: PieceGenre | 'ALL') => void;
   favoritesOnly: boolean;
   setFavoritesOnly: (fav: boolean) => void;
+  isOfflineMode: boolean;
+  setOfflineMode: (enabled: boolean) => Promise<void>;
   preferredVoicePart: string | null;
   setPreferredVoicePart: (part: string | null) => Promise<void>;
   signUp: (params: SignUpParams) => Promise<{ success: boolean; user?: UserProfile; error?: string }>;
@@ -48,6 +54,16 @@ interface RepertoireContextValue {
   createGroup: (params: CreateGroupParams) => Promise<{ success: boolean; code?: string; error?: string }>;
   loadEnsembleMembers: () => Promise<void>;
   promoteMember: (targetUserId: string) => Promise<{ success: boolean; error?: string }>;
+  demoteMember: (targetUserId: string) => Promise<{ success: boolean; error?: string }>;
+  createProgram: (data: {
+    title: string;
+    date?: string;
+    venue?: string;
+    description?: string;
+    scoreIds: string[];
+  }) => Promise<{ success: boolean; program?: Setlist; error?: string }>;
+  updateProgram: (programId: string, data: Partial<Setlist>) => Promise<{ success: boolean; error?: string }>;
+  deleteProgram: (programId: string) => Promise<{ success: boolean; error?: string }>;
   uploadScore: (
     scoreData: UploadScoreData,
     file: { uri: string; name: string; size?: number }
@@ -73,12 +89,14 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
   const [localUris, setLocalUris] = useState<Record<string, string>>({});
   const [favorites, setFavorites] = useState<string[]>([]);
   const [preferredVoicePart, setPreferredVoicePartState] = useState<string | null>(null);
+  const [isOfflineMode, setIsOfflineModeState] = useState<boolean>(false);
 
   // Sorting & Filtering State
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortOption, setSortOption] = useState<SortOption>(SORT_OPTIONS[0]);
   const [voicingFilter, setVoicingFilter] = useState<Voicing | 'ALL'>('ALL');
   const [seasonFilter, setSeasonFilter] = useState<LiturgicalSeason | 'ALL'>('ALL');
+  const [genreFilter, setGenreFilter] = useState<PieceGenre | 'ALL'>('ALL');
   const [favoritesOnly, setFavoritesOnly] = useState<boolean>(false);
 
   // Sync background downloads
@@ -128,7 +146,11 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
         const preferredPart = await StorageService.getPreferredVoicePart();
         setPreferredVoicePartState(preferredPart || user?.voicePart || null);
 
-        // 3. Restore active choir instance
+        // 3. Restore offline mode preference
+        const offlineModeStored = await StorageService.getOfflineMode();
+        setIsOfflineModeState(offlineModeStored);
+
+        // 4. Restore active choir instance
         const activeCode = await StorageService.getActiveInstanceCode();
         if (activeCode) {
           const role = await StorageService.getUserRole(activeCode);
@@ -147,28 +169,30 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
             setCurrentInstance(cached);
           }
 
-          // Fetch fresh cloud instance & members in background
-          DatabaseService.getGroupByCode(activeCode).then(fresh => {
-            if (fresh) {
-              setCurrentInstance(fresh);
-              StorageService.saveCachedInstance(fresh);
-              syncScoresForInstance(fresh);
-            }
-          });
+          // Fetch fresh cloud instance & members in background if not in offline mode
+          if (!offlineModeStored) {
+            DatabaseService.getGroupByCode(activeCode).then(fresh => {
+              if (fresh) {
+                setCurrentInstance(fresh);
+                StorageService.saveCachedInstance(fresh);
+                syncScoresForInstance(fresh);
+              }
+            });
 
-          DatabaseService.getEnsembleMembers(activeCode).then(members => {
-            if (members.length > 0) {
-              setEnsembleMembers(members);
-              // Update user role if changed in cloud
-              if (user) {
-                const myMembership = members.find(m => m.userId === user.id);
-                if (myMembership) {
-                  setUserRole(myMembership.role);
-                  StorageService.setUserRole(activeCode, myMembership.role);
+            DatabaseService.getEnsembleMembers(activeCode).then(members => {
+              if (members.length > 0) {
+                setEnsembleMembers(members);
+                // Update user role if changed in cloud
+                if (user) {
+                  const myMembership = members.find(m => m.userId === user.id);
+                  if (myMembership) {
+                    setUserRole(myMembership.role);
+                    StorageService.setUserRole(activeCode, myMembership.role);
+                  }
                 }
               }
-            }
-          });
+            });
+          }
         }
       } catch (err) {
         console.warn('Init session error:', err);
@@ -284,11 +308,91 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
 
     const res = await DatabaseService.promoteMemberToAdmin(currentInstance.code, targetUserId);
     if (res.success) {
-      setEnsembleMembers(prev =>
-        prev.map(m => (m.userId === targetUserId ? { ...m, role: 'admin' } : m))
-      );
+      await loadEnsembleMembers();
     }
     return res;
+  };
+
+  // Demote an Admin to Member (Owner or Admins can perform this; owner cannot be demoted)
+  const demoteMember = async (targetUserId: string): Promise<{ success: boolean; error?: string }> => {
+    if (!currentInstance) return { success: false, error: 'No active ensemble selected.' };
+    if (userRole !== 'admin') return { success: false, error: 'Only admins can demote other members.' };
+
+    const res = await DatabaseService.demoteAdminToMember(currentInstance.code, targetUserId);
+    if (res.success) {
+      await loadEnsembleMembers();
+      if (currentUser?.id === targetUserId) {
+        setUserRole('member');
+      }
+    }
+    return res;
+  };
+
+  // Create a new concert program
+  const createProgram = async (data: {
+    title: string;
+    date?: string;
+    venue?: string;
+    description?: string;
+    scoreIds: string[];
+  }): Promise<{ success: boolean; program?: Setlist; error?: string }> => {
+    if (!currentInstance) return { success: false, error: 'No active ensemble.' };
+    if (userRole !== 'admin') return { success: false, error: 'Only admins can create programs.' };
+
+    try {
+      const program = await DatabaseService.createProgram(currentInstance.code, data);
+      const updated = await DatabaseService.getGroupByCode(currentInstance.code);
+      if (updated) setCurrentInstance(updated);
+      return { success: true, program };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to create program' };
+    }
+  };
+
+  // Update a concert program
+  const updateProgram = async (
+    programId: string,
+    data: Partial<Setlist>
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!currentInstance) return { success: false, error: 'No active ensemble.' };
+    if (userRole !== 'admin') return { success: false, error: 'Only admins can edit programs.' };
+
+    try {
+      await DatabaseService.updateProgram(currentInstance.code, programId, data);
+      const updated = await DatabaseService.getGroupByCode(currentInstance.code);
+      if (updated) setCurrentInstance(updated);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to update program' };
+    }
+  };
+
+  // Delete a concert program
+  const deleteProgram = async (programId: string): Promise<{ success: boolean; error?: string }> => {
+    if (!currentInstance) return { success: false, error: 'No active ensemble.' };
+    if (userRole !== 'admin') return { success: false, error: 'Only admins can delete programs.' };
+
+    try {
+      await DatabaseService.deleteProgram(currentInstance.code, programId);
+      const updated = await DatabaseService.getGroupByCode(currentInstance.code);
+      if (updated) setCurrentInstance(updated);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to delete program' };
+    }
+  };
+
+  // Set Offline Mode toggle
+  const setOfflineMode = async (enabled: boolean) => {
+    await StorageService.setOfflineMode(enabled);
+    setIsOfflineModeState(enabled);
+    if (!enabled && currentInstance) {
+      // Switching to online mode: refresh cloud instance in background
+      DatabaseService.getGroupByCode(currentInstance.code).then(fresh => {
+        if (fresh) setCurrentInstance(fresh);
+      });
+      loadEnsembleMembers();
+    }
   };
 
   // Upload a new PDF Score (Restricted to Admins)
@@ -419,9 +523,16 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
 
   // Compute filtered & sorted scores
   const filteredAndSortedScores = useMemo(() => {
-    const filtered = filterScores(scores, searchQuery, voicingFilter, seasonFilter, favoritesOnly);
+    const filtered = filterScores(
+      scores,
+      searchQuery,
+      voicingFilter,
+      seasonFilter,
+      favoritesOnly,
+      genreFilter
+    );
     return sortScores(filtered, sortOption);
-  }, [scores, searchQuery, voicingFilter, seasonFilter, favoritesOnly, sortOption]);
+  }, [scores, searchQuery, voicingFilter, seasonFilter, favoritesOnly, genreFilter, sortOption]);
 
   return (
     <RepertoireContext.Provider
@@ -444,8 +555,12 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
         setVoicingFilter,
         seasonFilter,
         setSeasonFilter,
+        genreFilter,
+        setGenreFilter,
         favoritesOnly,
         setFavoritesOnly,
+        isOfflineMode,
+        setOfflineMode,
         preferredVoicePart,
         setPreferredVoicePart,
         signUp,
@@ -455,6 +570,10 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
         createGroup,
         loadEnsembleMembers,
         promoteMember,
+        demoteMember,
+        createProgram,
+        updateProgram,
+        deleteProgram,
         uploadScore,
         deleteScore,
         signOut,

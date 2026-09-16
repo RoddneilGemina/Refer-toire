@@ -27,6 +27,19 @@ export type DownloadStatus = 'idle' | 'downloading' | 'completed' | 'failed';
 
 export type UserRole = 'admin' | 'member';
 
+export type PieceGenre =
+  | 'Folk'
+  | 'Pop'
+  | 'Classical'
+  | 'Sacred'
+  | 'Contemporary'
+  | 'Jazz'
+  | 'Spiritual'
+  | 'Renaissance'
+  | 'World'
+  | 'Musical Theatre'
+  | 'General';
+
 export interface ScoreItem {
   id: string;
   title: string;
@@ -35,6 +48,7 @@ export interface ScoreItem {
   lyricist?: string;
   voicing: Voicing;
   season: LiturgicalSeason;
+  genre?: PieceGenre;
   keySignature?: string;
   tempo?: string;
   duration?: string; // e.g. "3:45"
@@ -54,8 +68,10 @@ export interface Setlist {
   id: string;
   title: string;
   date?: string;
+  venue?: string;
   description?: string;
   scoreIds: string[];
+  createdAt?: string;
 }
 
 export interface UserProfile {
@@ -73,6 +89,7 @@ export interface EnsembleMember {
   fullName: string;
   email: string;
   role: UserRole; // 'admin' | 'member'
+  isOwner?: boolean;
   voicePart?: string;
   joinedAt: string;
 }
@@ -109,6 +126,7 @@ export interface UploadScoreData {
   arranger?: string;
   voicing?: Voicing;
   season?: LiturgicalSeason;
+  genre?: PieceGenre;
   keySignature?: string;
   tempo?: string;
   duration?: string;

@@ -1,4 +1,4 @@
-import { ScoreItem, SortOption, Voicing, LiturgicalSeason } from '@/types/repertoire';
+import { ScoreItem, SortOption, Voicing, LiturgicalSeason, PieceGenre } from '@/types/repertoire';
 
 export const SORT_OPTIONS: SortOption[] = [
   { field: 'title', direction: 'asc', label: 'Title (A–Z)' },
@@ -92,7 +92,8 @@ export function filterScores(
   query: string,
   voicingFilter: Voicing | 'ALL',
   seasonFilter: LiturgicalSeason | 'ALL',
-  favoritesOnly: boolean
+  favoritesOnly: boolean,
+  genreFilter?: PieceGenre | 'ALL'
 ): ScoreItem[] {
   const cleanQuery = query.trim().toLowerCase();
 
@@ -106,6 +107,10 @@ export function filterScores(
     }
 
     if (seasonFilter !== 'ALL' && score.season !== seasonFilter) {
+      return false;
+    }
+
+    if (genreFilter && genreFilter !== 'ALL' && (score.genre || 'General') !== genreFilter) {
       return false;
     }
 

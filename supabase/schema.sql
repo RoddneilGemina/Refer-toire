@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS public.instances (
   season_name TEXT,
   creator_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   admin_key TEXT,
+  setlists JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT now(),
   last_updated TIMESTAMPTZ DEFAULT now()
 );
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS public.scores (
   composer TEXT DEFAULT 'Choral',
   arranger TEXT,
   voicing TEXT DEFAULT 'SATB',
+  genre TEXT DEFAULT 'General',
   season TEXT DEFAULT 'General',
   key_signature TEXT,
   tempo TEXT,
@@ -67,6 +69,10 @@ CREATE TABLE IF NOT EXISTS public.scores (
   uploaded_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
+
+-- 4.1 Migration helpers (for upgrading existing database deployments)
+ALTER TABLE public.instances ADD COLUMN IF NOT EXISTS setlists JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.scores ADD COLUMN IF NOT EXISTS genre TEXT DEFAULT 'General';
 
 -- 5. Indexes for instant lookup and sorting
 CREATE INDEX IF NOT EXISTS idx_instances_code ON public.instances(code);

@@ -33,10 +33,12 @@ export default function EnsembleMembersModal({
     ensembleMembers,
     loadEnsembleMembers,
     promoteMember,
+    demoteMember,
   } = useRepertoire();
 
   const [loading, setLoading] = useState<boolean>(false);
   const [promotingUserId, setPromotingUserId] = useState<string | null>(null);
+  const [demotingUserId, setDemotingUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (visible && currentInstance) {
@@ -84,6 +86,47 @@ export default function EnsembleMembersModal({
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Promote', style: 'default', onPress: doPromote },
+        ]
+      );
+    }
+  };
+
+  const handleDemote = async (member: EnsembleMember) => {
+    const doDemote = async () => {
+      setDemotingUserId(member.userId);
+      const res = await demoteMember(member.userId);
+      setDemotingUserId(null);
+
+      if (res.success) {
+        if (Platform.OS === 'web') {
+          window.alert(`${member.fullName} has been changed to a regular Member.`);
+        } else {
+          Alert.alert('Role Changed', `${member.fullName} is now a Member.`);
+        }
+      } else {
+        const msg = res.error || 'Failed to change role.';
+        if (Platform.OS === 'web') {
+          window.alert(msg);
+        } else {
+          Alert.alert('Error', msg);
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(
+        `Make ${member.fullName} a regular Member?\n\nThey will no longer be able to upload or edit sheet music.`
+      );
+      if (confirmed) {
+        await doDemote();
+      }
+    } else {
+      Alert.alert(
+        'Make Member',
+        `Are you sure you want to demote ${member.fullName} to Member? They will no longer have admin privileges.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Make Member', style: 'destructive', onPress: doDemote },
         ]
       );
     }
@@ -146,6 +189,8 @@ export default function EnsembleMembersModal({
                 ) : (
                   admins.map(admin => {
                     const isYou = currentUser?.id === admin.userId;
+                    const isOwner = admin.isOwner || (currentInstance?.creatorId && admin.userId === currentInstance.creatorId);
+                    const isDemoting = demotingUserId === admin.userId;
                     return (
                       <View
                         key={admin.id || admin.userId}
@@ -157,8 +202,8 @@ export default function EnsembleMembersModal({
                             borderWidth: isYou ? 1.5 : 1,
                           },
                         ]}>
-                        <View style={[styles.avatarCircle, { backgroundColor: '#FDE68A' }]}>
-                          <Ionicons name="ribbon" size={20} color="#B45309" />
+                        <View style={[styles.avatarCircle, { backgroundColor: isOwner ? '#FDE68A' : '#E0E7FF' }]}>
+                          <Ionicons name={isOwner ? 'ribbon' : 'shield-checkmark'} size={20} color={isOwner ? '#B45309' : '#4338CA'} />
                         </View>
 
                         <View style={{ flex: 1, backgroundColor: 'transparent' }}>
@@ -177,9 +222,11 @@ export default function EnsembleMembersModal({
                           </Text>
                         </View>
 
-                        <View style={{ alignItems: 'flex-end', backgroundColor: 'transparent' }}>
-                          <View style={[styles.roleBadgeAdmin, { backgroundColor: '#FEF3C7' }]}>
-                            <Text style={[styles.roleBadgeAdminText, { color: '#92400E' }]}>👑 Admin</Text>
+                        <View style={{ alignItems: 'flex-end', gap: 4, backgroundColor: 'transparent' }}>
+                          <View style={[styles.roleBadgeAdmin, { backgroundColor: isOwner ? '#FEF3C7' : '#EEF2FF' }]}>
+                            <Text style={[styles.roleBadgeAdminText, { color: isOwner ? '#92400E' : '#3730A3' }]}>
+                              {isOwner ? '👑 Owner & Director' : '👑 Admin'}
+                            </Text>
                           </View>
                           {admin.voicePart && (
                             <View style={[styles.voicePill, { backgroundColor: theme.card }]}>
@@ -187,6 +234,23 @@ export default function EnsembleMembersModal({
                                 {admin.voicePart}
                               </Text>
                             </View>
+                          )}
+
+                          {/* Demote Button: Visible to admins for other admins who are not the owner */}
+                          {userRole === 'admin' && !isYou && !isOwner && (
+                            <TouchableOpacity
+                              style={[styles.demoteBtn, { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' }]}
+                              onPress={() => handleDemote(admin)}
+                              disabled={isDemoting}>
+                              {isDemoting ? (
+                                <ActivityIndicator size="small" color="#DC2626" />
+                              ) : (
+                                <>
+                                  <Ionicons name="arrow-down-circle-outline" size={13} color="#DC2626" style={{ marginRight: 3 }} />
+                                  <Text style={styles.demoteBtnText}>Make Member</Text>
+                                </>
+                              )}
+                            </TouchableOpacity>
                           )}
                         </View>
                       </View>
@@ -462,6 +526,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: '#D97706',
+  },
+  demoteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  demoteBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#DC2626',
   },
   noMembersBox: {
     padding: 20,

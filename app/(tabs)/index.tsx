@@ -14,13 +14,14 @@ import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
-import { ScoreItem, Voicing, LiturgicalSeason } from '@/types/repertoire';
+import { ScoreItem, Voicing, LiturgicalSeason, PieceGenre } from '@/types/repertoire';
 import { SORT_OPTIONS } from '@/utils/sorting';
 import * as DocumentPicker from 'expo-document-picker';
 import UploadScoreModal, { SelectedPdfFile } from '@/components/UploadScoreModal';
 
 const VOICING_FILTERS: Array<Voicing | 'ALL'> = ['ALL', 'SATB', 'SSAA', 'TTBB', 'SAB'];
 const SEASON_FILTERS: Array<LiturgicalSeason | 'ALL'> = ['ALL', 'Lent', 'Holy Week', 'Christmas', 'Concert', 'Evensong', 'General'];
+const GENRE_FILTERS: Array<PieceGenre | 'ALL'> = ['ALL', 'Folk', 'Pop', 'Classical', 'Sacred', 'Contemporary', 'Jazz', 'Spiritual'];
 
 export default function RepertoireLibraryScreen() {
   const colorScheme = useColorScheme();
@@ -40,8 +41,12 @@ export default function RepertoireLibraryScreen() {
     setVoicingFilter,
     seasonFilter,
     setSeasonFilter,
+    genreFilter,
+    setGenreFilter,
     favoritesOnly,
     setFavoritesOnly,
+    isOfflineMode,
+    setOfflineMode,
     toggleFavorite,
     uploadScore,
     reSyncAll,
@@ -123,6 +128,11 @@ export default function RepertoireLibraryScreen() {
               <View style={[styles.seasonBadge, { backgroundColor: theme.surfaceSubtle }]}>
                 <Text style={[styles.seasonText, { color: theme.subtext }]}>{item.season}</Text>
               </View>
+              {item.genre && (
+                <View style={[styles.genreBadge, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}>
+                  <Text style={[styles.genreText, { color: theme.tint }]}>{item.genre}</Text>
+                </View>
+              )}
             </View>
 
             <View style={styles.statusGroup}>
@@ -218,33 +228,59 @@ export default function RepertoireLibraryScreen() {
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={[styles.syncBadge, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}
-          onPress={() => reSyncAll()}
-          disabled={isSyncing}>
-          {isSyncing ? (
-            <>
-              <ActivityIndicator size="small" color={theme.tint} style={{ marginRight: 6 }} />
-              <Text style={[styles.syncBadgeText, { color: theme.tint }]}>
-                {syncProgress
-                  ? `${syncProgress.completedFiles}/${syncProgress.totalFiles}`
-                  : 'Syncing...'}
-              </Text>
-            </>
-          ) : (
-            <>
-              <Ionicons
-                name="cloud-done-outline"
-                size={16}
-                color={Colors.status.completed}
-                style={{ marginRight: 4 }}
-              />
-              <Text style={[styles.syncBadgeText, { color: Colors.status.completed }]}>
-                Synced
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
+        <View style={styles.headerRightActions}>
+          <TouchableOpacity
+            style={[
+              styles.modePill,
+              {
+                backgroundColor: isOfflineMode ? '#FEE2E2' : '#DCFCE7',
+                borderColor: isOfflineMode ? '#F87171' : '#86EFAC',
+              },
+            ]}
+            onPress={() => setOfflineMode(!isOfflineMode)}>
+            <Ionicons
+              name={isOfflineMode ? 'airplane' : 'cloud-done'}
+              size={12}
+              color={isOfflineMode ? '#DC2626' : '#16A34A'}
+              style={{ marginRight: 4 }}
+            />
+            <Text
+              style={[
+                styles.modePillText,
+                { color: isOfflineMode ? '#DC2626' : '#16A34A' },
+              ]}>
+              {isOfflineMode ? 'Offline' : 'Online'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.syncBadge, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}
+            onPress={() => reSyncAll()}
+            disabled={isSyncing}>
+            {isSyncing ? (
+              <>
+                <ActivityIndicator size="small" color={theme.tint} style={{ marginRight: 6 }} />
+                <Text style={[styles.syncBadgeText, { color: theme.tint }]}>
+                  {syncProgress
+                    ? `${syncProgress.completedFiles}/${syncProgress.totalFiles}`
+                    : 'Syncing...'}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Ionicons
+                  name="cloud-done-outline"
+                  size={16}
+                  color={Colors.status.completed}
+                  style={{ marginRight: 4 }}
+                />
+                <Text style={[styles.syncBadgeText, { color: Colors.status.completed }]}>
+                  Synced
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search Bar & Filter Toggle */}
@@ -292,6 +328,37 @@ export default function RepertoireLibraryScreen() {
             }
           />
         </TouchableOpacity>
+      </View>
+
+      {/* Quick Genre Filter Scroll Chips */}
+      <View style={[styles.genreScrollWrapper, { backgroundColor: 'transparent' }]}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.genreScrollContent}>
+          {GENRE_FILTERS.map(g => {
+            const isSelected = genreFilter === g;
+            return (
+              <TouchableOpacity
+                key={g}
+                style={[
+                  styles.genreFilterChip,
+                  isSelected
+                    ? { backgroundColor: theme.tint, borderColor: theme.tint }
+                    : { backgroundColor: theme.surfaceSubtle, borderColor: theme.border },
+                ]}
+                onPress={() => setGenreFilter(g)}>
+                <Text
+                  style={[
+                    styles.genreFilterChipText,
+                    { color: isSelected ? '#FFFFFF' : theme.text, fontWeight: isSelected ? '700' : '500' },
+                  ]}>
+                  {g === 'ALL' ? 'All Genres' : g}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
 
       {/* Collapsible Filter Bar (Voicing, Season, Favorites) */}
@@ -510,6 +577,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  modePillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   syncBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -528,6 +612,32 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 6,
     gap: 8,
+  },
+  genreScrollWrapper: {
+    paddingBottom: 8,
+  },
+  genreScrollContent: {
+    paddingHorizontal: 16,
+    gap: 6,
+  },
+  genreFilterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  genreFilterChipText: {
+    fontSize: 12,
+  },
+  genreBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  genreText: {
+    fontSize: 10,
+    fontWeight: '700',
   },
   searchBar: {
     flex: 1,

@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
-import { Voicing, UploadScoreData } from '@/types/repertoire';
+import { Voicing, UploadScoreData, PieceGenre } from '@/types/repertoire';
 
 export interface SelectedPdfFile {
   uri: string;
@@ -30,6 +30,19 @@ interface UploadScoreModalProps {
 }
 
 const VOICING_OPTIONS: Voicing[] = ['SATB', 'SATB div.', 'SSAA', 'SSA', 'TTBB', 'SAB', 'Unison'];
+const GENRE_OPTIONS: PieceGenre[] = [
+  'Folk',
+  'Pop',
+  'Classical',
+  'Sacred',
+  'Contemporary',
+  'Jazz',
+  'Spiritual',
+  'Renaissance',
+  'World',
+  'Musical Theatre',
+  'General',
+];
 
 const cleanFileNameToTitle = (filename: string): string => {
   return filename
@@ -53,6 +66,7 @@ export default function UploadScoreModal({ file, onClose, onUpload }: UploadScor
   const [showOptionalDetails, setShowOptionalDetails] = useState(false);
   const [composer, setComposer] = useState('');
   const [voicing, setVoicing] = useState<Voicing>('SATB');
+  const [genre, setGenre] = useState<PieceGenre>('General');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -64,6 +78,7 @@ export default function UploadScoreModal({ file, onClose, onUpload }: UploadScor
       setTitle(cleanFileNameToTitle(file.name));
       setComposer('');
       setVoicing('SATB');
+      setGenre('General');
       setShowOptionalDetails(false);
       setErrorMessage(null);
       setIsSubmitting(false);
@@ -116,7 +131,8 @@ export default function UploadScoreModal({ file, onClose, onUpload }: UploadScor
           composer: composer.trim() || undefined,
           voicing: voicing || 'SATB',
           season: 'General',
-          tags: ['Uploaded'],
+          genre: genre || 'General',
+          tags: ['Uploaded', genre || 'General'],
         },
         selectedFile
       );
@@ -238,8 +254,27 @@ export default function UploadScoreModal({ file, onClose, onUpload }: UploadScor
 
             {showOptionalDetails && (
               <View style={[styles.optionalBody, { backgroundColor: 'transparent' }]}>
+                {/* Genre / Piece Type */}
+                <Text style={[styles.optionalLabel, { color: theme.text }]}>Genre / Type</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsScroll}>
+                  {GENRE_OPTIONS.map(g => (
+                    <TouchableOpacity
+                      key={g}
+                      style={[
+                        styles.chip,
+                        {
+                          backgroundColor: genre === g ? theme.tint : theme.surfaceSubtle,
+                          borderColor: genre === g ? theme.tint : theme.border,
+                        },
+                      ]}
+                      onPress={() => setGenre(g)}>
+                      <Text style={[styles.chipText, { color: genre === g ? '#FFFFFF' : theme.text }]}>{g}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
                 {/* Composer */}
-                <Text style={[styles.optionalLabel, { color: theme.text }]}>Composer (Optional)</Text>
+                <Text style={[styles.optionalLabel, { color: theme.text, marginTop: 12 }]}>Composer (Optional)</Text>
                 <TextInput
                   style={[
                     styles.optionalInput,

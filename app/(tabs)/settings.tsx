@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   Share,
   Platform,
+  Switch,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -41,6 +42,8 @@ export default function SettingsScreen() {
     ensembleMembers,
     scores,
     isSyncing,
+    isOfflineMode,
+    setOfflineMode,
     reSyncAll,
     clearOfflineCache,
     signOut,
@@ -327,6 +330,39 @@ export default function SettingsScreen() {
           </View>
         </View>
 
+        {/* Network & Offline Mode Card */}
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: theme.card, borderColor: theme.border },
+          ]}>
+          <View style={[styles.switchCardRow, { backgroundColor: 'transparent' }]}>
+            <View style={{ flex: 1, backgroundColor: 'transparent', paddingRight: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', gap: 6 }}>
+                <Ionicons
+                  name={isOfflineMode ? 'cloud-offline' : 'cloud-done'}
+                  size={20}
+                  color={isOfflineMode ? '#F59E0B' : Colors.status.completed}
+                />
+                <Text style={[styles.sectionTitle, { color: theme.text, marginBottom: 0 }]}>
+                  {isOfflineMode ? 'Offline Mode Active' : 'Online Live Mode'}
+                </Text>
+              </View>
+              <Text style={[styles.sectionSub, { color: theme.subtext, marginTop: 4, marginBottom: 0 }]}>
+                {isOfflineMode
+                  ? 'App uses cached repertoire with 0ms network latency. Switch off to sync new scores and member updates.'
+                  : 'Live synchronization is active. Changes and updates from the director will sync automatically.'}
+              </Text>
+            </View>
+            <Switch
+              value={isOfflineMode}
+              onValueChange={setOfflineMode}
+              trackColor={{ false: theme.surfaceSubtle, true: '#F59E0B' }}
+              thumbColor={isOfflineMode ? '#FFFFFF' : '#F3F4F6'}
+            />
+          </View>
+        </View>
+
         {/* Offline Storage Engine */}
         <View
           style={[
@@ -524,6 +560,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     padding: 16,
+  },
+  switchCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   cardHeader: {
     flexDirection: 'row',

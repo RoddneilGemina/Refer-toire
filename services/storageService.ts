@@ -12,6 +12,7 @@ const STORAGE_KEYS = {
   USER_ROLE_PREFIX: '@refertoire:role:',
   CUSTOM_INSTANCES: '@refertoire:custom_instances_list',
   REGISTERED_USERS: '@refertoire:registered_users',
+  OFFLINE_MODE: '@refertoire:offline_mode',
 };
 
 export class StorageService {
@@ -295,6 +296,33 @@ export class StorageService {
       await AsyncStorage.setItem(key, JSON.stringify(members));
     } catch (e) {
       console.warn('Failed to save ensemble members to storage', e);
+    }
+  }
+
+  /**
+   * Check if Offline Mode is explicitly enabled by the user
+   */
+  static async getOfflineMode(): Promise<boolean> {
+    try {
+      const val = await AsyncStorage.getItem(STORAGE_KEYS.OFFLINE_MODE);
+      return val === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Enable or disable Offline Mode
+   */
+  static async setOfflineMode(enabled: boolean): Promise<void> {
+    try {
+      if (enabled) {
+        await AsyncStorage.setItem(STORAGE_KEYS.OFFLINE_MODE, 'true');
+      } else {
+        await AsyncStorage.removeItem(STORAGE_KEYS.OFFLINE_MODE);
+      }
+    } catch (e) {
+      console.warn('Failed to save offline mode state', e);
     }
   }
 
