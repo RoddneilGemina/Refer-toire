@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Refer-toire",
+    "name": "Refertoire",
     "slug": "Refer-toire",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -40,6 +40,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "fc757370-3a08-43a7-9314-ca51bc37d110"
+      }
     }
   }
 }
