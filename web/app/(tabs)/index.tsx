@@ -197,12 +197,12 @@ export default function RepertoireLibraryScreen() {
               {item.arranger ? ` • arr. ${item.arranger}` : ''}
             </Text>
 
-            {/* Bottom details (Key, Pages, Duration) */}
+            {/* Bottom details (Key, Pages) */}
             <View style={[styles.footerRow, { backgroundColor: 'transparent' }]}>
               <View style={styles.footerDetail}>
                 <Ionicons name="document-text-outline" size={13} color={theme.subtext} />
                 <Text style={[styles.footerText, { color: theme.subtext }]}>
-                  {item.pageCount} pages
+                  {item.pageCount} {item.pageCount === 1 ? 'page' : 'pages'}
                 </Text>
               </View>
 
@@ -212,13 +212,6 @@ export default function RepertoireLibraryScreen() {
                   <Text style={[styles.footerText, { color: theme.subtext }]}>
                     {item.keySignature}
                   </Text>
-                </View>
-              )}
-
-              {item.duration && (
-                <View style={styles.footerDetail}>
-                  <Ionicons name="time-outline" size={13} color={theme.subtext} />
-                  <Text style={[styles.footerText, { color: theme.subtext }]}>{item.duration}</Text>
                 </View>
               )}
             </View>

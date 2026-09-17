@@ -113,51 +113,91 @@ class UpdateServiceManager {
     }
 
     try {
-      // 1. Query Supabase `app_releases` table for published builds
-      const { data, error } = await supabase
-        .from('app_releases')
-        .select('*')
-        .order('build_number', { ascending: false })
-        .limit(1);
-
-      if (!error && data && data.length > 0) {
-        const row = data[0];
-        const release: AppRelease = {
-          id: row.id,
-          version: row.version || '1.0.0',
-          buildNumber: row.build_number || 1,
-          releaseNotes: row.release_notes || '• Performance enhancements and bug fixes.',
-          apkUrl: row.apk_url || '',
-          fileSize: row.file_size || 0,
-          isMandatory: Boolean(row.is_mandatory),
-          minSupportedVersion: row.min_supported_version,
-          publishedAt: row.published_at,
-          updateType: 'native_build',
-        };
-
-        const isUpdateAvailable = this.isNewer(
-          currentVersion,
-          currentBuildNumber,
-          release.version,
-          release.buildNumber
+      // 1. Query remote version.json on GitHub Pages (instant CDN cache-busted check)
+      try {
+        const vResp = await fetch(
+          `https://refertoire.github.io/apk/version.json?t=${Date.now()}`,
+          { headers: { 'Cache-Control': 'no-cache' } }
         );
+        if (vResp.ok) {
+          const vData = await vResp.json();
+          if (vData && this.isNewer(currentVersion, currentBuildNumber, vData.version, vData.buildNumber)) {
+            const release: AppRelease = {
+              id: `release-v${vData.version}-b${vData.buildNumber}`,
+              version: vData.version,
+              buildNumber: vData.buildNumber,
+              releaseNotes: vData.releaseNotes || '• New features, Go to Page navigation, and optimizations.',
+              apkUrl: vData.apkUrl || 'https://refertoire.github.io/apk/Refertoire.apk',
+              fileSize: vData.fileSize || 51200000,
+              isMandatory: Boolean(vData.isMandatory),
+              minSupportedVersion: vData.minSupportedVersion,
+              publishedAt: vData.publishedAt,
+              updateType: 'native_build',
+            };
 
-        if (isUpdateAvailable) {
-          return {
-            available: true,
-            currentVersion,
-            currentBuildNumber,
-            latestVersion: release.version,
-            latestBuildNumber: release.buildNumber,
-            release,
-          };
+            return {
+              available: true,
+              currentVersion,
+              currentBuildNumber,
+              latestVersion: release.version,
+              latestBuildNumber: release.buildNumber,
+              release,
+            };
+          }
         }
+      } catch (vErr) {
+        // Fallback to next source
       }
 
-      // 2. Query GitHub repository manifest as automatic fallback for git-based updates
+      // 2. Query Supabase `app_releases` table for published builds
+      try {
+        const { data, error } = await supabase
+          .from('app_releases')
+          .select('*')
+          .order('build_number', { ascending: false })
+          .limit(1);
+
+        if (!error && data && data.length > 0) {
+          const row = data[0];
+          const release: AppRelease = {
+            id: row.id,
+            version: row.version || '1.0.0',
+            buildNumber: row.build_number || 1,
+            releaseNotes: row.release_notes || '• Performance enhancements and bug fixes.',
+            apkUrl: row.apk_url || '',
+            fileSize: row.file_size || 0,
+            isMandatory: Boolean(row.is_mandatory),
+            minSupportedVersion: row.min_supported_version,
+            publishedAt: row.published_at,
+            updateType: 'native_build',
+          };
+
+          const isUpdateAvailable = this.isNewer(
+            currentVersion,
+            currentBuildNumber,
+            release.version,
+            release.buildNumber
+          );
+
+          if (isUpdateAvailable) {
+            return {
+              available: true,
+              currentVersion,
+              currentBuildNumber,
+              latestVersion: release.version,
+              latestBuildNumber: release.buildNumber,
+              release,
+            };
+          }
+        }
+      } catch (sbErr) {
+        // Ignored
+      }
+
+      // 3. Query GitHub repository manifest as automatic fallback for git-based updates
       try {
         const ghResp = await fetch(
-          `https://raw.githubusercontent.com/refertoire/refertoire.github.io/main/app.json?t=${Date.now()}`,
+          `https://raw.githubusercontent.com/refertoire/refertoire.github.io/main/web/app.json?t=${Date.now()}`,
           { headers: { 'Cache-Control': 'no-cache' } }
         );
         if (ghResp.ok) {
@@ -170,7 +210,7 @@ class UpdateServiceManager {
               id: `github-v${ghVersion}-b${ghBuild}`,
               version: ghVersion,
               buildNumber: ghBuild,
-              releaseNotes: '• Performance updates, PDF reader enhancements, and bug fixes.',
+              releaseNotes: '• Performance updates, Go to Page feature, and bug fixes.',
               apkUrl: 'https://refertoire.github.io/apk/Refertoire.apk',
               updateType: 'native_build',
             };

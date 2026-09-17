@@ -43,9 +43,10 @@ jobs:
       - name: Assemble GitHub Pages Structure
         run: |
           mkdir -p dist
-          # 1. Root Landing Page
+          # 1. Root Landing Page & Version Manifest
           cp index.html dist/index.html
           cp refertoire-logo.png dist/refertoire-logo.png
+          cp version.json dist/version.json
           touch dist/.nojekyll
 
           # 2. Web Demo (/web)
@@ -57,11 +58,13 @@ jobs:
           mkdir -p dist/apk
           cp apk/Refertoire.apk dist/apk/Refertoire.apk
           cp apk/index.html dist/apk/index.html
+          cp apk/version.json dist/apk/version.json
 
           # 4. Backwards-compatibility aliases (/demoapk and /download)
           mkdir -p dist/demoapk
           cp apk/Refertoire.apk dist/demoapk/Refertoire.apk
           cp apk/index.html dist/demoapk/index.html
+          cp apk/version.json dist/demoapk/version.json
 
           mkdir -p dist/download
           cp apk/index.html dist/download/index.html

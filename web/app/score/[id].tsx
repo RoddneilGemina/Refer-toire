@@ -8,6 +8,9 @@ import {
   Platform,
   Dimensions,
   StatusBar,
+  Modal,
+  TextInput,
+  ScrollView,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +20,7 @@ import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
+import { DatabaseService } from '@/services/databaseService';
 import PdfViewer from '@/components/PdfViewer';
 import { ViewMode } from '@/components/PdfViewer.types';
 
@@ -42,6 +46,10 @@ export default function ScoreViewerScreen() {
   const [showNotesDrawer, setShowNotesDrawer] = useState<boolean>(false);
   const [showControls, setShowControls] = useState<boolean>(true);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  // Go to Page Modal State
+  const [showGoToPageModal, setShowGoToPageModal] = useState<boolean>(false);
+  const [targetPageInput, setTargetPageInput] = useState<string>('');
 
   // Sync totalPages if score metadata changes
   useEffect(() => {
@@ -187,9 +195,36 @@ export default function ScoreViewerScreen() {
     setTotalPages(total);
   }, []);
 
+  const handleOpenGoToPage = useCallback(() => {
+    setTargetPageInput(String(currentPage));
+    setShowGoToPageModal(true);
+  }, [currentPage]);
+
+  const handleJumpToPage = useCallback((pageNum: number) => {
+    if (pageNum >= 1 && pageNum <= totalPages) {
+      setCurrentPage(pageNum);
+      setShowGoToPageModal(false);
+    }
+  }, [totalPages]);
+
+  const handleJumpSubmit = useCallback(() => {
+    const num = parseInt(targetPageInput.trim(), 10);
+    if (!isNaN(num) && num >= 1 && num <= totalPages) {
+      handleJumpToPage(num);
+    } else {
+      Alert.alert('Invalid Page', `Please enter a page number between 1 and ${totalPages}.`);
+    }
+  }, [targetPageInput, totalPages, handleJumpToPage]);
+
   const handleLoadSuccess = useCallback((total: number) => {
-    setTotalPages(total);
-  }, []);
+    if (total > 0) {
+      setTotalPages(total);
+      if (score && score.pageCount !== total && currentInstance?.code) {
+        score.pageCount = total;
+        DatabaseService.updateScorePageCount(currentInstance.code, score.id, total);
+      }
+    }
+  }, [score, currentInstance?.code]);
 
   const handleToggleControls = useCallback(() => {
     setShowControls((prev) => !prev);
@@ -346,6 +381,14 @@ export default function ScoreViewerScreen() {
               />
             </TouchableOpacity>
 
+            {/* Go to Page Action */}
+            <TouchableOpacity
+              style={[styles.iconButton, { backgroundColor: theme.surfaceSubtle }]}
+              accessibilityLabel="Go to Page"
+              onPress={handleOpenGoToPage}>
+              <Ionicons name="navigate-outline" size={18} color={activeText} />
+            </TouchableOpacity>
+
             {/* Share / Open External (forScore) */}
             <TouchableOpacity
               style={[styles.iconButton, { backgroundColor: theme.surfaceSubtle }]}
@@ -410,11 +453,15 @@ export default function ScoreViewerScreen() {
               <Text style={[styles.pageBtnText, { color: activeText }]}>Prev</Text>
             </TouchableOpacity>
 
-            <View style={[styles.pageCounterPill, { backgroundColor: theme.surfaceSubtle }]}>
+            <TouchableOpacity
+              style={[styles.pageCounterPill, { backgroundColor: theme.surfaceSubtle }]}
+              onPress={handleOpenGoToPage}
+              accessibilityLabel="Tap to jump to page">
               <Text style={[styles.pageCounterText, { color: activeText }]}>
                 {currentPage} / {totalPages}
               </Text>
-            </View>
+              <Ionicons name="swap-horizontal-outline" size={13} color={theme.subtext} style={{ marginLeft: 5 }} />
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.pageBtn, { opacity: currentPage < totalPages ? 1 : 0.3 }]}
@@ -482,11 +529,6 @@ export default function ScoreViewerScreen() {
                   Key: <Text style={{ color: activeText, fontWeight: '600' }}>{score.keySignature}</Text>
                 </Text>
               )}
-              {score.duration && (
-                <Text style={[styles.metadataItem, { color: theme.subtext }]}>
-                  Duration: <Text style={{ color: activeText, fontWeight: '600' }}>{score.duration}</Text>
-                </Text>
-              )}
             </View>
 
             <View style={[styles.tagsRow, { backgroundColor: 'transparent' }]}>
@@ -502,6 +544,102 @@ export default function ScoreViewerScreen() {
         )}
       </View>
       )}
+
+      {/* Go to Page Modal */}
+      <Modal
+        visible={showGoToPageModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowGoToPageModal(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowGoToPageModal(false)}>
+          <View
+            style={[
+              styles.goToPageCard,
+              { backgroundColor: activeCard, borderColor: activeBorder },
+            ]}
+            onStartShouldSetResponder={() => true}>
+            <View style={styles.goToPageHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'transparent' }}>
+                <Ionicons name="navigate-circle-outline" size={22} color={theme.tint} />
+                <Text style={[styles.goToPageTitle, { color: activeText }]}>Go to Page</Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setShowGoToPageModal(false)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={22} color={theme.subtext} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.goToPageSub, { color: theme.subtext }]}>
+              Enter a page number (1 – {totalPages}) or tap below:
+            </Text>
+
+            {/* Input Row */}
+            <View style={styles.goToPageInputRow}>
+              <TextInput
+                style={[
+                  styles.goToPageInput,
+                  {
+                    backgroundColor: theme.surfaceSubtle,
+                    borderColor: theme.border,
+                    color: activeText,
+                  },
+                ]}
+                keyboardType="number-pad"
+                value={targetPageInput}
+                onChangeText={setTargetPageInput}
+                placeholder="Page #"
+                placeholderTextColor={theme.subtext}
+                selectTextOnFocus
+                autoFocus
+                onSubmitEditing={handleJumpSubmit}
+              />
+              <TouchableOpacity
+                style={[styles.goToPageSubmitBtn, { backgroundColor: theme.tint }]}
+                onPress={handleJumpSubmit}>
+                <Text style={styles.goToPageSubmitText}>Go</Text>
+                <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 4 }} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Quick-Jump Chips (Horizontal Scroll) */}
+            <View style={{ marginTop: 16 }}>
+              <Text style={[styles.quickJumpLabel, { color: theme.subtext }]}>All Pages:</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.quickJumpChips}>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
+                  const isCur = p === currentPage;
+                  return (
+                    <TouchableOpacity
+                      key={p}
+                      style={[
+                        styles.quickPageChip,
+                        {
+                          backgroundColor: isCur ? theme.tint : theme.surfaceSubtle,
+                          borderColor: isCur ? theme.tint : theme.border,
+                        },
+                      ]}
+                      onPress={() => handleJumpToPage(p)}>
+                      <Text
+                        style={[
+                          styles.quickPageChipText,
+                          { color: isCur ? '#FFFFFF' : activeText, fontWeight: isCur ? '700' : '500' },
+                        ]}>
+                        {p}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -744,5 +882,91 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     letterSpacing: 0.3,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  goToPageCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 20,
+    borderWidth: 1,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  goToPageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    backgroundColor: 'transparent',
+  },
+  goToPageTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  goToPageSub: {
+    fontSize: 13,
+    marginBottom: 16,
+  },
+  goToPageInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'transparent',
+  },
+  goToPageInput: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  goToPageSubmitBtn: {
+    height: 48,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  goToPageSubmitText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  quickJumpLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  quickJumpChips: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  quickPageChip: {
+    minWidth: 44,
+    height: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  quickPageChipText: {
+    fontSize: 14,
   },
 });

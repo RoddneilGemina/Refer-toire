@@ -838,6 +838,8 @@ export class DatabaseService {
 
     let cloudFileUrl = localFileUri;
 
+    let detectedPageCount = scoreData.pageCount;
+
     // Upload to Supabase Storage bucket 'scores'
     try {
       let uploadBody: any = null;
@@ -846,6 +848,30 @@ export class DatabaseService {
       } else if (fileData.uri) {
         const response = await fetch(fileData.uri);
         uploadBody = await response.blob();
+      }
+
+      // Automatically detect accurate PDF page count from file buffer
+      if (uploadBody) {
+        try {
+          let pdfString = '';
+          if (typeof uploadBody.arrayBuffer === 'function') {
+            const arrBuf = await uploadBody.arrayBuffer();
+            pdfString = new TextDecoder('latin1').decode(new Uint8Array(arrBuf));
+          }
+          if (pdfString) {
+            const countMatch = pdfString.match(/\/Type\s*\/Pages[^>]*\/Count\s+(\d+)/);
+            if (countMatch && countMatch[1]) {
+              detectedPageCount = parseInt(countMatch[1], 10);
+            } else {
+              const pageMatches = pdfString.match(/\/Type\s*\/Page\b/g);
+              if (pageMatches && pageMatches.length > 0) {
+                detectedPageCount = pageMatches.length;
+              }
+            }
+          }
+        } catch (cntErr) {
+          console.warn('PDF page count detection notice:', cntErr);
+        }
       }
 
       if (uploadBody) {
@@ -884,7 +910,7 @@ export class DatabaseService {
       keySignature: scoreData.keySignature?.trim() || undefined,
       tempo: scoreData.tempo?.trim() || undefined,
       duration: scoreData.duration?.trim() || '3:00',
-      pageCount: scoreData.pageCount || 2,
+      pageCount: detectedPageCount || 2,
       sourceUrl: cloudFileUrl,
       localUri: localFileUri,
       fileSize: fileData.size || 185000,
@@ -989,6 +1015,45 @@ export class DatabaseService {
     instance.scores = instance.scores.filter(s => s.id !== scoreId);
     instance.lastUpdated = new Date().toISOString();
     await StorageService.saveCustomInstance(instance);
+  }
+
+  /**
+   * Update the verified page count of a score across Supabase and local cache
+   */
+  static async updateScorePageCount(
+    instanceCode: string,
+    scoreId: string,
+    pageCount: number
+  ): Promise<void> {
+    if (!scoreId || !pageCount || pageCount < 1) return;
+
+    // 1. Update in Supabase if online
+    try {
+      const isOffline = await StorageService.getOfflineMode();
+      if (!isOffline && NetworkService.isOnline()) {
+        await supabase
+          .from('scores')
+          .update({ page_count: pageCount })
+          .eq('id', scoreId);
+      }
+    } catch (e) {
+      console.warn('Supabase page count update notice:', e);
+    }
+
+    // 2. Update in local instance cache
+    try {
+      const instance = await this.getGroupByCode(instanceCode);
+      if (instance) {
+        const target = instance.scores.find(s => s.id === scoreId);
+        if (target && target.pageCount !== pageCount) {
+          target.pageCount = pageCount;
+          await StorageService.saveCustomInstance(instance);
+          await StorageService.saveCachedInstance(instance);
+        }
+      }
+    } catch {
+      // Ignored
+    }
   }
 
   /**

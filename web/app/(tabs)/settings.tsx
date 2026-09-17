@@ -513,7 +513,7 @@ export default function SettingsScreen() {
             resizeMode="contain"
           />
           <Text style={[styles.appFooterText, { color: theme.subtext }]}>
-            Refertoire Choir Sync v1.0.0
+            Refertoire Ensemble Sync v{UpdateService.currentVersion}
           </Text>
           <Text style={[styles.appFooterSub, { color: theme.subtext }]}>
             Built with Expo SDK 57 & React Native
