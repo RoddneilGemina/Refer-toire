@@ -527,55 +527,261 @@
       resize();
 
       // Curved musical staff configuration
-      // The staff curves gently upwards from lower-left to upper-right like an ascending ribbon/slide
+      // The staff sweeps from lower ground (bottom-left) up to the upper-right like an ascending stylistic slide
       const LINE_COUNT = 5;
-      const LINE_SPACING = 15; // pixels between each stave line
+      const LINE_SPACING = 16; // 16px between each of the 5 staff lines
 
       function getStaffCenter(t, time) {
-        // t ranges from 0 to 1 (left to right)
-        // x spans across the viewport with margin
+        // t ranges from 0 to 1 across the screen
         const x = t * (width + 240) - 120;
-
-        // Curve from lower ground (bottom-left: ~82% height) up to top-right (~18% height)
-        // with gentle harmonic sine waves creating a stylistic melodic arch
+        // Curve from bottom-left (~82% height) up towards top-right (~18% height)
         const baseElevation = height * (0.82 - 0.64 * Math.pow(t, 0.88));
-        const wave = Math.sin(t * Math.PI * 2.2 + time * 0.0006) * 35;
-        const wave2 = Math.cos(t * Math.PI * 1.4 - time * 0.0004) * 20;
-        const y = baseElevation + wave + wave2;
-
-        return { x, y };
+        const wave = Math.sin(t * Math.PI * 2.2 + time * 0.0006) * 32;
+        const wave2 = Math.cos(t * Math.PI * 1.4 - time * 0.0004) * 18;
+        return { x, y: baseElevation + wave + wave2 };
       }
 
-      // Secondary subtle harmonic staff across upper-middle background
       function getSecondaryStaffCenter(t, time) {
         const x = t * (width + 240) - 120;
-        const baseElevation = height * (0.48 - 0.32 * t);
-        const wave = Math.cos(t * Math.PI * 2.5 + time * 0.0005) * 28;
+        const baseElevation = height * (0.50 - 0.34 * t);
+        const wave = Math.cos(t * Math.PI * 2.4 + time * 0.0005) * 26;
         return { x, y: baseElevation + wave };
       }
 
-      // Musical note symbols to float on/between lines
-      const NOTE_SYMBOLS = ['♩', '♪', '♫', '♬', '𝅗𝅥', '𝄞', '𝄢', '♭', '♯', '♮'];
+      // ONLY notes and rests: from whole note to 16th note, from whole rest to 16th rest
+      const NOTE_TYPES = [
+        'whole_note',
+        'half_note',
+        'quarter_note',
+        'eighth_note',
+        'sixteenth_note',
+        'beamed_eighth',
+        'whole_rest',
+        'half_rest',
+        'quarter_rest',
+        'eighth_rest',
+        'sixteenth_rest'
+      ];
 
-      // Note particles traveling along the staves
-      const NOTES_COUNT = 36;
+      // Slots strictly inside/on the 5-line staff:
+      // Lines: -2, -1, 0, 1, 2
+      // Spaces between lines: -1.5, -0.5, 0.5, 1.5
+      const STAFF_SLOTS = [-2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2];
+
+      const NOTES_COUNT = 42;
       const notes = [];
 
       for (let i = 0; i < NOTES_COUNT; i++) {
+        const type = NOTE_TYPES[Math.floor(Math.random() * NOTE_TYPES.length)];
+        // Rests often sit on or hang from specific staff lines
+        let slot = STAFF_SLOTS[Math.floor(Math.random() * STAFF_SLOTS.length)];
+        if (type === 'whole_rest') slot = -1; // hangs below line 4
+        else if (type === 'half_rest') slot = 0; // sits on line 3
+
         notes.push({
-          staff: Math.random() > 0.35 ? 1 : 2, // 1 = main rising staff, 2 = secondary
-          t: Math.random(), // position along curve (0 to 1)
-          speed: 0.00018 + Math.random() * 0.00035, // traveling speed left-to-right
-          // On and between the 5 lines: offsets from -2 to +2 in increments of 0.5
-          lineSlot: (Math.floor(Math.random() * 9) - 4) * 0.5,
+          staff: Math.random() > 0.35 ? 1 : 2,
+          t: Math.random(),
+          speed: 0.00022 + Math.random() * 0.00038,
+          lineSlot: slot,
           bobPhase: Math.random() * Math.PI * 2,
-          bobSpeed: 0.002 + Math.random() * 0.003,
-          bobAmp: 3 + Math.random() * 5, // gentle bobbing up and down
-          symbol: NOTE_SYMBOLS[Math.floor(Math.random() * NOTE_SYMBOLS.length)],
-          size: 20 + Math.random() * 16,
-          baseAlpha: 0.18 + Math.random() * 0.35,
-          colorHue: Math.random() > 0.3 ? '#F59E0B' : '#FDE68A'
+          bobSpeed: 0.0018 + Math.random() * 0.0025,
+          bobAmp: 1.5 + Math.random() * 1.5, // gentle bobbing within the staff
+          type: type,
+          baseAlpha: 0.22 + Math.random() * 0.38,
+          color: Math.random() > 0.3 ? '#F59E0B' : '#FDE68A',
+          scale: 0.85 + Math.random() * 0.25
         });
+      }
+
+      // Vector rendering for each note & rest type
+      function drawMusicSymbol(type, color, alpha, scale) {
+        ctx.save();
+        ctx.scale(scale, scale);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = color;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.6;
+        ctx.shadowColor = 'rgba(245, 158, 11, 0.35)';
+        ctx.shadowBlur = 6;
+
+        switch (type) {
+          case 'whole_note': {
+            // Whole note (semibreve): open tilted oval notehead, no stem
+            ctx.rotate(-0.35);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 8, 5, 0, 0, Math.PI * 2);
+            ctx.lineWidth = 2.4;
+            ctx.stroke();
+            break;
+          }
+
+          case 'half_note': {
+            // Half note (minim): open tilted oval notehead with upward stem
+            ctx.save();
+            ctx.rotate(-0.35);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 7, 4.4, 0, 0, Math.PI * 2);
+            ctx.lineWidth = 2.4;
+            ctx.stroke();
+            ctx.restore();
+            // Stem
+            ctx.beginPath();
+            ctx.moveTo(6, 0);
+            ctx.lineTo(6, -26);
+            ctx.lineWidth = 1.7;
+            ctx.stroke();
+            break;
+          }
+
+          case 'quarter_note': {
+            // Quarter note (crotchet): solid tilted oval notehead with upward stem
+            ctx.save();
+            ctx.rotate(-0.35);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 7, 4.4, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            // Stem
+            ctx.beginPath();
+            ctx.moveTo(6, 0);
+            ctx.lineTo(6, -26);
+            ctx.lineWidth = 1.7;
+            ctx.stroke();
+            break;
+          }
+
+          case 'eighth_note': {
+            // Eighth note (quaver): solid notehead + stem + single flag
+            ctx.save();
+            ctx.rotate(-0.35);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 7, 4.4, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            // Stem
+            ctx.beginPath();
+            ctx.moveTo(6, 0);
+            ctx.lineTo(6, -26);
+            ctx.lineWidth = 1.7;
+            ctx.stroke();
+            // Flag
+            ctx.beginPath();
+            ctx.moveTo(6, -26);
+            ctx.bezierCurveTo(13, -23, 15, -14, 8, -8);
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+            break;
+          }
+
+          case 'sixteenth_note': {
+            // Sixteenth note (semiquaver): solid notehead + stem + double flags
+            ctx.save();
+            ctx.rotate(-0.35);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 7, 4.4, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            // Stem
+            ctx.beginPath();
+            ctx.moveTo(6, 0);
+            ctx.lineTo(6, -28);
+            ctx.lineWidth = 1.7;
+            ctx.stroke();
+            // Flag 1
+            ctx.beginPath();
+            ctx.moveTo(6, -28);
+            ctx.bezierCurveTo(13, -25, 15, -18, 8, -13);
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+            // Flag 2
+            ctx.beginPath();
+            ctx.moveTo(6, -20);
+            ctx.bezierCurveTo(13, -17, 15, -10, 8, -5);
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+            break;
+          }
+
+          case 'beamed_eighth': {
+            // Beamed eighth pair
+            ctx.save();
+            ctx.rotate(-0.35);
+            ctx.beginPath();
+            ctx.ellipse(-11, 0, 6, 4, 0, 0, Math.PI * 2);
+            ctx.ellipse(11, -2, 6, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            // Stems
+            ctx.beginPath();
+            ctx.moveTo(-6, 0);
+            ctx.lineTo(-6, -24);
+            ctx.moveTo(16, -2);
+            ctx.lineTo(16, -26);
+            ctx.lineWidth = 1.7;
+            ctx.stroke();
+            // Thick Beam
+            ctx.beginPath();
+            ctx.moveTo(-6.5, -24);
+            ctx.lineTo(16.5, -26);
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            break;
+          }
+
+          case 'whole_rest': {
+            // Whole rest: solid rectangle hanging from line
+            ctx.fillRect(-6, 0, 12, 6);
+            break;
+          }
+
+          case 'half_rest': {
+            // Half rest: solid rectangle sitting on line
+            ctx.fillRect(-6, -6, 12, 6);
+            break;
+          }
+
+          case 'quarter_rest': {
+            // Quarter rest (crotchet rest): classic zig-zag stroke
+            ctx.beginPath();
+            ctx.moveTo(-2, -12);
+            ctx.lineTo(3, -6);
+            ctx.lineTo(-3, 0);
+            ctx.lineTo(3, 6);
+            ctx.bezierCurveTo(3, 10, -2, 11, -2, 14);
+            ctx.lineWidth = 2.6;
+            ctx.stroke();
+            break;
+          }
+
+          case 'eighth_rest': {
+            // Eighth rest (quaver rest): slash with dot hook
+            ctx.beginPath();
+            ctx.arc(-2, -7, 2.6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(0, -7);
+            ctx.bezierCurveTo(2, -3, 2, 0, -3, 8);
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+            break;
+          }
+
+          case 'sixteenth_rest': {
+            // Sixteenth rest (semiquaver rest): slash with double dot hooks
+            ctx.beginPath();
+            ctx.arc(-2, -10, 2.4, 0, Math.PI * 2);
+            ctx.arc(-1, -4, 2.4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(0, -10);
+            ctx.lineTo(1, -4);
+            ctx.bezierCurveTo(3, 0, 3, 3, -3, 10);
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+            break;
+          }
+        }
+        ctx.restore();
       }
 
       let startTime = null;
@@ -586,10 +792,10 @@
 
         ctx.clearRect(0, 0, width, height);
 
-        // --- 1. Draw Secondary Curved Staff ---
+        // --- 1. Draw Secondary Curved Staff Across Upper-Mid ---
         ctx.save();
-        ctx.strokeStyle = 'rgba(217, 119, 6, 0.07)';
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = 'rgba(217, 119, 6, 0.08)';
+        ctx.lineWidth = 1.3;
         const steps = 80;
 
         for (let line = -2; line <= 2; line++) {
@@ -610,10 +816,9 @@
         ctx.lineWidth = 1.6;
         for (let line = -2; line <= 2; line++) {
           ctx.beginPath();
-          // Subtle gradient across lines
           const grad = ctx.createLinearGradient(0, height * 0.85, width, height * 0.15);
           grad.addColorStop(0, 'rgba(217, 119, 6, 0.08)');
-          grad.addColorStop(0.5, 'rgba(245, 158, 11, 0.22)');
+          grad.addColorStop(0.5, 'rgba(245, 158, 11, 0.24)');
           grad.addColorStop(1, 'rgba(217, 119, 6, 0.12)');
           ctx.strokeStyle = grad;
 
@@ -628,11 +833,7 @@
         }
         ctx.restore();
 
-        // --- 3. Draw Floating Musical Notes ---
-        ctx.save();
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-
+        // --- 3. Draw Notes & Rests Strictly On / Between Staff Lines ---
         for (let i = 0; i < notes.length; i++) {
           const n = notes[i];
 
@@ -640,41 +841,38 @@
           n.t += n.speed;
           if (n.t > 1.05) {
             n.t = -0.05;
-            n.lineSlot = (Math.floor(Math.random() * 9) - 4) * 0.5;
-            n.speed = 0.00018 + Math.random() * 0.00035;
-            n.symbol = NOTE_SYMBOLS[Math.floor(Math.random() * NOTE_SYMBOLS.length)];
+            n.type = NOTE_TYPES[Math.floor(Math.random() * NOTE_TYPES.length)];
+            let slot = STAFF_SLOTS[Math.floor(Math.random() * STAFF_SLOTS.length)];
+            if (n.type === 'whole_rest') slot = -1;
+            else if (n.type === 'half_rest') slot = 0;
+            n.lineSlot = slot;
+            n.speed = 0.00022 + Math.random() * 0.00038;
           }
 
-          // Calculate point on the respective staff
           const pt = n.staff === 1 ? getStaffCenter(n.t, time) : getSecondaryStaffCenter(n.t, time);
           const spacing = n.staff === 1 ? LINE_SPACING : LINE_SPACING * 0.85;
 
-          // Target line/space + gentle bobbing up and down
+          // Note Y stays strictly anchored to the assigned lineSlot with gentle bobbing
           const bob = Math.sin(time * n.bobSpeed + n.bobPhase) * n.bobAmp;
           const noteY = pt.y + (n.lineSlot * spacing) + bob;
           const noteX = pt.x;
 
-          // Edge fading (fade in on left, fade out on right)
+          // Smooth edge fading
           let edgeAlpha = 1;
           if (n.t < 0.08) {
             edgeAlpha = Math.max(0, n.t / 0.08);
-          } else if (n.t > 0.9) {
+          } else if (n.t > 0.90) {
             edgeAlpha = Math.max(0, (1.05 - n.t) / 0.15);
           }
 
           const currentAlpha = n.baseAlpha * edgeAlpha;
           if (currentAlpha > 0.01) {
             ctx.save();
-            ctx.globalAlpha = currentAlpha;
-            ctx.fillStyle = n.colorHue;
-            ctx.font = `${n.size}px "Segoe UI Symbol", "Apple Symbols", sans-serif`;
-            ctx.shadowColor = 'rgba(245, 158, 11, 0.4)';
-            ctx.shadowBlur = 8;
-            ctx.fillText(n.symbol, noteX, noteY);
+            ctx.translate(noteX, noteY);
+            drawMusicSymbol(n.type, n.color, currentAlpha, n.scale);
             ctx.restore();
           }
         }
-        ctx.restore();
 
         requestAnimationFrame(render);
       }
