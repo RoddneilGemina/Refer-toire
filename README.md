@@ -3,6 +3,16 @@
 > **Modern Choral Repertoire Manager & Offline Sheet Music Sync Engine**  
 > Built with Expo SDK 57, React Native, Expo Router, Mozilla PDF.js, Supabase, and TypeScript.
 
+[![Deploy to GitHub Pages](https://github.com/refertoire/refertoire.github.io/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/refertoire/refertoire.github.io/actions/workflows/deploy-pages.yml)
+[![Web App](https://img.shields.io/badge/Web_App-refertoire.github.io-blue?style=flat&logo=googlechrome)](https://refertoire.github.io/)
+[![Download Android APK](https://img.shields.io/badge/Android_APK-Download-success?style=flat&logo=android)](https://refertoire.github.io/demoapk/Refertoire.apk)
+
+---
+
+### 🚀 Live Deployment & Download
+- 🌐 **Live Web Application**: [https://refertoire.github.io](https://refertoire.github.io/)
+- 📱 **Android APK Direct Download**: [https://refertoire.github.io/demoapk/Refertoire.apk](https://refertoire.github.io/demoapk/Refertoire.apk)
+
 ---
 
 ## 📖 Overview
