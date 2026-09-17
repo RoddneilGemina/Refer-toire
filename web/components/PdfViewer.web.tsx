@@ -61,6 +61,10 @@ export default function PdfViewerWeb({
   const canvasRefs = useRef<Record<number, HTMLCanvasElement>>({});
   const renderedPagesRef = useRef<Set<number>>(new Set());
   const renderVersionRef = useRef<number>(0);
+  const hasScrolledToInitialRef = useRef<boolean>(false);
+  const isProgrammaticScrollRef = useRef<boolean>(false);
+  const renderedScrollDocRef = useRef<any>(null);
+  const renderedScrollScaleRef = useRef<number>(zoomScale);
 
   // Stabilize callbacks to prevent unnecessary effect re-runs
   const onPageChangeRef = useRef(onPageChange);
@@ -168,6 +172,8 @@ export default function PdfViewerWeb({
         if (isCancelled) return;
 
         setPdfDoc(doc);
+        hasScrolledToInitialRef.current = false;
+        renderedScrollDocRef.current = null;
         const count = doc.numPages || 1;
         setTotalPages(count);
         setPreloadProgress({ current: 0, total: count });
@@ -188,12 +194,28 @@ export default function PdfViewerWeb({
     };
   }, [resolvedUri]);
 
-  // Synchronize active page from parent prop without triggering re-load
+  // Synchronize active page from parent prop without triggering re-load or scroll resets
   useEffect(() => {
     if (initialPage >= 1 && initialPage <= totalPages && initialPage !== currentPageRef.current) {
+      currentPageRef.current = initialPage;
       setCurrentPage(initialPage);
+
+      if (viewMode === 'scroll' && scrollContainerRef.current) {
+        const targetEl = scrollContainerRef.current.querySelector(
+          `[data-page="${initialPage}"]`
+        ) as HTMLElement;
+        if (targetEl) {
+          isProgrammaticScrollRef.current = true;
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          setTimeout(() => {
+            isProgrammaticScrollRef.current = false;
+          }, 600);
+        }
+      } else if (viewMode === 'single' && containerRef.current) {
+        containerRef.current.scrollTop = 0;
+      }
     }
-  }, [initialPage, totalPages]);
+  }, [initialPage, totalPages, viewMode]);
 
   // 3. Preload the ENTIRE document upfront into persistent canvas elements
   // All pages are completely rendered in advance before dismissing the loading state.
@@ -304,6 +326,31 @@ export default function PdfViewerWeb({
 
   useEffect(() => {
     if (viewMode !== 'scroll' || !pdfDoc || useNativeEmbed) return;
+
+    // Fast-path: If all pages are already rendered for this doc and zoom scale, avoid re-rendering
+    if (
+      renderedScrollDocRef.current === pdfDoc &&
+      renderedScrollScaleRef.current === zoomScale &&
+      scrollContainerRef.current &&
+      scrollContainerRef.current.children.length === totalPages
+    ) {
+      // If switching into scroll view, scroll to current page
+      const targetPage = currentPageRef.current || 1;
+      if (targetPage > 1) {
+        const targetEl = scrollContainerRef.current.querySelector(
+          `[data-page="${targetPage}"]`
+        ) as HTMLElement;
+        if (targetEl) {
+          isProgrammaticScrollRef.current = true;
+          targetEl.scrollIntoView({ behavior: 'auto', block: 'start' });
+          setTimeout(() => {
+            isProgrammaticScrollRef.current = false;
+          }, 300);
+        }
+      }
+      return;
+    }
+
     let isCancelled = false;
 
     async function renderAllPagesForScroll() {
@@ -315,6 +362,7 @@ export default function PdfViewerWeb({
         ? containerRef.current.clientWidth - 40
         : 680;
       const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+      const filterStyle = getCanvasFilter();
 
       for (let p = 1; p <= totalPages; p++) {
         if (isCancelled) break;
@@ -334,19 +382,18 @@ export default function PdfViewerWeb({
         pageWrapper.style.borderRadius = '8px';
         pageWrapper.style.overflow = 'hidden';
         pageWrapper.style.position = 'relative';
+        pageWrapper.style.maxWidth = '100%';
+        pageWrapper.style.boxSizing = 'border-box';
 
         const canvas = document.createElement('canvas');
         canvas.width = viewport.width;
         canvas.height = viewport.height;
         canvas.style.width = `${Math.floor(viewport.width / dpr)}px`;
+        canvas.style.maxWidth = '100%';
         canvas.style.height = `${Math.floor(viewport.height / dpr)}px`;
         canvas.style.display = 'block';
-
-        if (stageMode) {
-          canvas.style.filter = 'invert(1) hue-rotate(180deg) brightness(0.95) contrast(1.15)';
-        } else if (sepiaMode) {
-          canvas.style.filter = 'sepia(0.35) contrast(1.05) brightness(0.97)';
-        }
+        canvas.style.filter = filterStyle.filter;
+        canvas.style.backgroundColor = filterStyle.backgroundColor;
 
         pageWrapper.appendChild(canvas);
         container.appendChild(pageWrapper);
@@ -357,11 +404,27 @@ export default function PdfViewerWeb({
         }
       }
 
-      // Scroll to initial page if specified
-      if (initialPage > 1 && !isCancelled) {
-        const targetEl = container.querySelector(`[data-page="${initialPage}"]`) as HTMLElement;
-        if (targetEl) {
-          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      if (!isCancelled) {
+        renderedScrollDocRef.current = pdfDoc;
+        renderedScrollScaleRef.current = zoomScale;
+
+        // Scroll to initial page ONCE on initial document load, or to currentPageRef if re-rendering on zoom
+        const targetPage = !hasScrolledToInitialRef.current
+          ? (initialPage || 1)
+          : (currentPageRef.current || 1);
+        hasScrolledToInitialRef.current = true;
+
+        if (targetPage > 1 && scrollContainerRef.current) {
+          const targetEl = scrollContainerRef.current.querySelector(
+            `[data-page="${targetPage}"]`
+          ) as HTMLElement;
+          if (targetEl) {
+            isProgrammaticScrollRef.current = true;
+            targetEl.scrollIntoView({ behavior: 'auto', block: 'start' });
+            setTimeout(() => {
+              isProgrammaticScrollRef.current = false;
+            }, 300);
+          }
         }
       }
     }
@@ -371,7 +434,18 @@ export default function PdfViewerWeb({
     return () => {
       isCancelled = true;
     };
-  }, [viewMode, pdfDoc, totalPages, zoomScale, stageMode, sepiaMode, useNativeEmbed, initialPage]);
+  }, [viewMode, pdfDoc, totalPages, zoomScale, useNativeEmbed]);
+
+  // Dynamically update canvas filters in continuous scroll mode without wiping DOM or losing scroll position
+  useEffect(() => {
+    if (viewMode !== 'scroll' || !scrollContainerRef.current) return;
+    const filterStyle = getCanvasFilter();
+    const canvases = scrollContainerRef.current.querySelectorAll('canvas');
+    canvases.forEach((canvas) => {
+      canvas.style.filter = filterStyle.filter;
+      canvas.style.backgroundColor = filterStyle.backgroundColor;
+    });
+  }, [stageMode, sepiaMode, viewMode]);
 
   // Track active page during continuous vertical scrolling
   useEffect(() => {
@@ -380,11 +454,15 @@ export default function PdfViewerWeb({
     let ticking = false;
 
     const handleScroll = () => {
+      if (isProgrammaticScrollRef.current) return;
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
         ticking = false;
-        const pageEls = container.querySelectorAll('[data-page]');
+        if (!container || !scrollContainerRef.current) return;
+        const pageEls = scrollContainerRef.current.querySelectorAll('[data-page]');
+        if (pageEls.length === 0) return;
+
         const scrollThreshold = container.scrollTop + container.clientHeight * 0.35;
         let detectedPage = 1;
 
@@ -396,6 +474,7 @@ export default function PdfViewerWeb({
         });
 
         if (detectedPage !== currentPageRef.current) {
+          currentPageRef.current = detectedPage;
           setCurrentPage(detectedPage);
           onPageChangeRef.current?.(detectedPage, totalPagesRef.current);
         }
@@ -410,10 +489,26 @@ export default function PdfViewerWeb({
   const goToPage = useCallback((page: number) => {
     const valid = Math.min(Math.max(1, page), totalPagesRef.current);
     if (valid !== currentPageRef.current) {
+      currentPageRef.current = valid;
       setCurrentPage(valid);
       onPageChangeRef.current?.(valid, totalPagesRef.current);
+
+      if (viewMode === 'scroll' && scrollContainerRef.current) {
+        const targetEl = scrollContainerRef.current.querySelector(
+          `[data-page="${valid}"]`
+        ) as HTMLElement;
+        if (targetEl) {
+          isProgrammaticScrollRef.current = true;
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          setTimeout(() => {
+            isProgrammaticScrollRef.current = false;
+          }, 600);
+        }
+      } else if (viewMode === 'single' && containerRef.current) {
+        containerRef.current.scrollTop = 0;
+      }
     }
-  }, []);
+  }, [viewMode]);
 
   const goToPrevPage = useCallback(() => {
     goToPage(currentPageRef.current - 1);
@@ -525,7 +620,9 @@ export default function PdfViewerWeb({
         alignItems: 'center',
         justifyContent: 'flex-start',
         position: 'relative',
-        overflow: 'auto',
+        overflowX: 'hidden',
+        overflowY: 'auto',
+        boxSizing: 'border-box',
         backgroundColor: stageMode ? '#05070A' : '#F8FAFC',
         transition: 'background-color 0.25s ease',
       }}>
@@ -743,12 +840,21 @@ export default function PdfViewerWeb({
       {viewMode === 'scroll' && !loading && !renderError && (
         <div
           ref={scrollContainerRef}
+          onClick={(e) => {
+            // Toggle controls if tapping directly on a canvas or container background
+            if ((e.target as HTMLElement).tagName === 'CANVAS' || e.target === e.currentTarget) {
+              onToggleControlsRef.current?.();
+            }
+          }}
           style={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             padding: '16px 8px 80px',
             width: '100%',
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            cursor: 'default',
           }}
         />
       )}
