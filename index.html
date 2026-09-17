@@ -3,25 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Refertoire — Modern Choral Repertoire Manager & Offline Sheet Music Sync Engine</title>
-  <meta name="description" content="Offline-first choral score manager with Mozilla PDF.js viewer, Stage Mode glare elimination, and instant ensemble access code sync.">
+  <title>Refertoire — Ensemble Repertoire Syncing App by RoddneilGemina</title>
+  <meta name="description" content="Refertoire is an Ensemble Repertoire Syncing app designed to remove the hassle of forgetting specific pieces to learn or to keep track of. Built by RoddneilGemina.">
   <meta name="theme-color" content="#080B11">
+  <link rel="icon" type="image/png" href="refertoire-logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg: #080B11;
-      --card-bg: rgba(15, 21, 35, 0.75);
+      --card-bg: rgba(15, 21, 35, 0.78);
       --card-border: rgba(255, 255, 255, 0.08);
       --gold: #F59E0B;
+      --gold-light: #FDE68A;
       --gold-dark: #D97706;
-      --gold-glow: rgba(245, 158, 11, 0.25);
+      --gold-glow: rgba(245, 158, 11, 0.28);
       --text-main: #F8FAFC;
       --text-muted: #94A3B8;
       --text-dim: #64748B;
       --accent-blue: #38BDF8;
-      --green: #10B981;
     }
 
     * {
@@ -39,18 +40,30 @@
       min-height: 100vh;
       display: flex;
       flex-direction: column;
+      position: relative;
     }
 
-    /* Ambient background lighting */
+    /* Ambient background glow behind canvas */
     .ambient-glow {
       position: fixed;
-      top: -200px;
+      top: -150px;
       left: 50%;
       transform: translateX(-50%);
-      width: 900px;
-      height: 600px;
-      background: radial-gradient(circle, rgba(217, 119, 6, 0.12) 0%, rgba(56, 189, 248, 0.04) 40%, transparent 70%);
-      filter: blur(80px);
+      width: 1000px;
+      height: 650px;
+      background: radial-gradient(circle, rgba(217, 119, 6, 0.14) 0%, rgba(56, 189, 248, 0.04) 45%, transparent 70%);
+      filter: blur(90px);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Music Staff & Floating Notes Canvas */
+    #music-canvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
       pointer-events: none;
       z-index: 0;
     }
@@ -60,14 +73,14 @@
       margin: 0 auto;
       padding: 0 24px;
       position: relative;
-      z-index: 1;
+      z-index: 10;
     }
 
     /* Navigation Bar */
     header {
-      padding: 24px 0;
+      padding: 18px 0;
       border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-      backdrop-filter: blur(12px);
+      backdrop-filter: blur(14px);
       position: sticky;
       top: 0;
       z-index: 100;
@@ -88,22 +101,31 @@
       color: var(--text-main);
     }
 
-    .brand-icon {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: linear-gradient(135deg, #D97706, #B45309);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
+    .brand-logo-img {
+      width: 38px;
+      height: 38px;
+      border-radius: 9px;
+      object-fit: contain;
       box-shadow: 0 4px 12px var(--gold-glow);
     }
 
+    .brand-title-wrap {
+      display: flex;
+      flex-direction: column;
+    }
+
     .brand-name {
-      font-size: 20px;
+      font-size: 19px;
       font-weight: 800;
       letter-spacing: -0.5px;
+      line-height: 1.2;
+    }
+
+    .brand-author {
+      font-size: 11px;
+      color: var(--gold);
+      font-weight: 600;
+      letter-spacing: 0.2px;
     }
 
     .nav-actions {
@@ -126,8 +148,26 @@
 
     /* Hero Section */
     .hero {
-      padding: 80px 0 60px 0;
+      padding: 70px 0 50px 0;
       text-align: center;
+    }
+
+    .hero-logo-container {
+      margin-bottom: 24px;
+      display: inline-block;
+      position: relative;
+    }
+
+    .hero-logo-img {
+      width: 140px;
+      height: 140px;
+      object-fit: contain;
+      filter: drop-shadow(0 10px 25px rgba(217, 119, 6, 0.35));
+      transition: transform 0.3s ease;
+    }
+
+    .hero-logo-img:hover {
+      transform: scale(1.05) rotate(-2deg);
     }
 
     .badge {
@@ -139,14 +179,19 @@
       color: #FBBF24;
       font-size: 13px;
       font-weight: 600;
-      padding: 6px 16px;
+      padding: 6px 18px;
       border-radius: 9999px;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
       letter-spacing: 0.2px;
     }
 
+    .badge-author {
+      color: #FDE68A;
+      font-weight: 700;
+    }
+
     .hero-title {
-      font-size: clamp(36px, 5.5vw, 64px);
+      font-size: clamp(34px, 5vw, 60px);
       font-weight: 800;
       line-height: 1.15;
       letter-spacing: -1.5px;
@@ -163,20 +208,20 @@
     }
 
     .hero-sub {
-      font-size: clamp(16px, 2vw, 20px);
+      font-size: clamp(16px, 1.8vw, 19px);
       color: var(--text-muted);
       max-width: 680px;
       margin: 0 auto 40px auto;
       line-height: 1.6;
     }
 
-    /* Primary Action Portals */
+    /* Primary Action Buttons */
     .action-portals {
       display: flex;
       flex-wrap: wrap;
       justify-content: center;
       gap: 16px;
-      margin-bottom: 60px;
+      margin-bottom: 70px;
     }
 
     .btn-portal {
@@ -202,7 +247,7 @@
 
     .btn-web:hover {
       transform: translateY(-2px);
-      box-shadow: 0 16px 30px -5px rgba(217, 119, 6, 0.4);
+      box-shadow: 0 16px 30px -5px rgba(217, 119, 6, 0.45);
       background: linear-gradient(135deg, #F59E0B, #D97706);
     }
 
@@ -216,11 +261,11 @@
     .btn-apk:hover {
       background: rgba(255, 255, 255, 0.1);
       transform: translateY(-2px);
-      border-color: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.22);
     }
 
     .btn-badge {
-      background: rgba(0, 0, 0, 0.25);
+      background: rgba(0, 0, 0, 0.28);
       padding: 3px 8px;
       border-radius: 6px;
       font-size: 12px;
@@ -228,77 +273,12 @@
       color: #F8FAFC;
     }
 
-    /* Directory Structure Visualizer */
-    .dir-banner {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 16px;
-      padding: 24px;
-      max-width: 760px;
-      margin: 0 auto 70px auto;
-      text-align: left;
-      backdrop-filter: blur(12px);
-    }
-
-    .dir-banner-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-      font-size: 13px;
-      color: var(--text-dim);
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .dir-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 16px;
-    }
-
-    .dir-card {
-      background: rgba(0, 0, 0, 0.3);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      border-radius: 12px;
-      padding: 16px;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      text-decoration: none;
-      color: inherit;
-      transition: all 0.2s;
-    }
-
-    .dir-card:hover {
-      border-color: var(--gold);
-      transform: translateY(-1px);
-    }
-
-    .dir-card-icon {
-      font-size: 28px;
-    }
-
-    .dir-card-title {
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--text-main);
-    }
-
-    .dir-card-path {
-      font-size: 12px;
-      color: var(--gold);
-      font-family: monospace;
-      margin-top: 2px;
-    }
-
-    /* Features Grid */
+    /* Features Section */
     .section-title {
       font-size: 28px;
       font-weight: 700;
       text-align: center;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
     }
 
     .section-sub {
@@ -320,12 +300,12 @@
       border: 1px solid var(--card-border);
       border-radius: 20px;
       padding: 32px;
-      backdrop-filter: blur(12px);
-      transition: border-color 0.2s, transform 0.2s;
+      backdrop-filter: blur(14px);
+      transition: border-color 0.25s, transform 0.25s;
     }
 
     .feature-card:hover {
-      border-color: rgba(245, 158, 11, 0.4);
+      border-color: rgba(245, 158, 11, 0.45);
       transform: translateY(-4px);
     }
 
@@ -363,6 +343,10 @@
       text-align: center;
       font-size: 14px;
       color: var(--text-dim);
+      position: relative;
+      z-index: 10;
+      background: rgba(8, 11, 17, 0.9);
+      backdrop-filter: blur(8px);
     }
 
     .footer-links {
@@ -381,17 +365,33 @@
     .footer-links a:hover {
       color: var(--gold);
     }
+
+    .footer-credit {
+      margin-top: 6px;
+      font-size: 13px;
+      color: var(--text-dim);
+    }
+
+    .footer-credit strong {
+      color: var(--gold);
+    }
   </style>
 </head>
 <body>
+  <!-- Stylistic Animated Music Staff & Notes Canvas -->
+  <canvas id="music-canvas"></canvas>
+
   <div class="ambient-glow"></div>
 
   <!-- Header -->
   <header>
     <div class="container nav-content">
       <a href="./" class="brand">
-        <div class="brand-icon">🎶</div>
-        <div class="brand-name">Refertoire</div>
+        <img src="refertoire-logo.png" alt="Refertoire" class="brand-logo-img">
+        <div class="brand-title-wrap">
+          <span class="brand-name">Refertoire</span>
+          <span class="brand-author">by RoddneilGemina</span>
+        </div>
       </a>
       <div class="nav-actions">
         <a href="./web/" class="nav-link">Web App</a>
@@ -401,20 +401,28 @@
     </div>
   </header>
 
-  <!-- Hero Section -->
+  <!-- Main Hero Section -->
   <main class="container">
     <section class="hero">
-      <div class="badge">
-        <span>✨</span> Choral Performance & Repertoire Sync Engine
+      <div class="hero-logo-container">
+        <img src="refertoire-logo.png" alt="Refertoire Logo" class="hero-logo-img">
       </div>
+
+      <div>
+        <div class="badge">
+          <span>✨</span> Ensemble Repertoire Syncing App • by <span class="badge-author">RoddneilGemina</span>
+        </div>
+      </div>
+
       <h1 class="hero-title">
-        Stage-Ready Scores.<br><span>100% Offline</span> Resilience.
+        Never Forget a Piece.<br><span>100% Offline</span> Resilience.
       </h1>
+
       <p class="hero-sub">
-        Designed specifically for choral societies, cathedral choirs, and vocal ensembles rehearsing in thick stone sanctuaries and Wi-Fi dead zones.
+        Designed to remove the hassle of forgetting specific pieces to learn or to keep track of. Keep your ensemble's entire sheet music repertoire synced, organized, and available 100% offline.
       </p>
 
-      <!-- Primary Action Buttons -->
+      <!-- Primary Action Buttons (Web Demo & APK) -->
       <div class="action-portals">
         <a href="./web/" class="btn-portal btn-web">
           <span>🌐</span>
@@ -427,50 +435,26 @@
           <span class="btn-badge">48.9 MB</span>
         </a>
       </div>
-
-      <!-- Clean Directory Links Card -->
-      <div class="dir-banner">
-        <div class="dir-banner-header">
-          <span>Directory Navigation</span>
-          <span>refertoire.github.io</span>
-        </div>
-        <div class="dir-grid">
-          <a href="./web/" class="dir-card">
-            <div class="dir-card-icon">💻</div>
-            <div>
-              <div class="dir-card-title">Web Application Demo</div>
-              <div class="dir-card-path">/web/</div>
-            </div>
-          </a>
-          <a href="./apk/" class="dir-card">
-            <div class="dir-card-icon">📦</div>
-            <div>
-              <div class="dir-card-title">Android APK Downloads</div>
-              <div class="dir-card-path">/apk/</div>
-            </div>
-          </a>
-        </div>
-      </div>
     </section>
 
-    <!-- Key Features -->
-    <h2 class="section-title">Built for Choral Directors & Choristers</h2>
-    <p class="section-sub">Zero complicated logins. Instant code pairing, high-fidelity score rendering, and stage glare reduction.</p>
+    <!-- Key Features Grid -->
+    <h2 class="section-title">Built for Choral Directors & Ensemble Singers</h2>
+    <p class="section-sub">Pair your group with an 8-character access code and access complete rehearsal scores instantly.</p>
 
     <div class="features-grid">
       <div class="feature-card">
         <div class="feature-icon">🔑</div>
         <h3 class="feature-title">Access Code Instant Sync</h3>
         <p class="feature-desc">
-          Singers join by entering their choir's 8-character access code. The app instantly verifies against the database and synchronizes all repertoire scores offline.
+          Choristers connect in seconds using an ensemble access code. The app automatically pairs with the database and downloads all current scores into local storage.
         </p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">🎼</div>
-        <h3 class="feature-title">Mozilla PDF.js Score Viewer</h3>
+        <h3 class="feature-title">High-DPI Mozilla PDF.js Reader</h3>
         <p class="feature-desc">
-          High-DPI canvas rendering with native devicePixelRatio scaling. Features single-page turns, continuous scroll, precision zoom (60%–250%), and foot pedal support.
+          Crystal-clear sheet music canvas rendering with device pixel scaling. Supports single-page turns, vertical continuous scrolling, and Bluetooth foot pedal navigation.
         </p>
       </div>
 
@@ -478,7 +462,7 @@
         <div class="feature-icon">🎭</div>
         <h3 class="feature-title">Concert Hall Stage Mode</h3>
         <p class="feature-desc">
-          Inverts sheet music to high-contrast white & gold notation on an ultra-dark background to eliminate face glare and preserve night vision on darkened concert stages.
+          Inverts sheet music to crisp white & gold notation on an ultra-dark background to eliminate face glare and preserve night vision in dimmed performance halls.
         </p>
       </div>
 
@@ -486,15 +470,15 @@
         <div class="feature-icon">⚡</div>
         <h3 class="feature-title">100% Offline Storage</h3>
         <p class="feature-desc">
-          Scores are cached in persistent local storage. Rehearsals in ancient cathedrals or underground rehearsal halls continue without disruption.
+          All repertoire scores are saved directly on your device. Rehearsals in ancient stone cathedrals, basements, or Wi-Fi dead zones proceed without dropouts.
         </p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">📚</div>
-        <h3 class="feature-title">Choral Voicing & Season Filters</h3>
+        <h3 class="feature-title">Voicing & Liturgical Filter</h3>
         <p class="feature-desc">
-          Filter repertoire by SATB, SSAA, TTBB, Liturgical Season (Advent, Lent, Easter, Ordinary Time), composer surname, and conductor rehearsal notes.
+          Filter and group repertoire by SATB, SSAA, TTBB, Liturgical Season (Advent, Lent, Easter, Ordinary Time), composer surname, and rehearsal setlists.
         </p>
       </div>
 
@@ -502,7 +486,7 @@
         <div class="feature-icon">📤</div>
         <h3 class="feature-title">File-First PDF Uploads</h3>
         <p class="feature-desc">
-          Directors can upload scores with automatic title parsing and instant broadcast to all ensemble choristers via Supabase Cloud Storage.
+          Directors can add new scores via device file chooser with automated title parsing, broadcasting instant synchronization to all ensemble members.
         </p>
       </div>
     </div>
@@ -518,7 +502,185 @@
         <a href="https://github.com/refertoire/refertoire.github.io/blob/main/README.md" target="_blank" rel="noopener">Documentation</a>
       </div>
       <p>© 2026 Refertoire. Built with Expo SDK 57, React Native, Mozilla PDF.js & Supabase.</p>
+      <p class="footer-credit">Designed & Developed by <strong>RoddneilGemina</strong></p>
     </div>
   </footer>
+
+  <!-- Canvas Music Animation Script -->
+  <script>
+    (function() {
+      const canvas = document.getElementById('music-canvas');
+      const ctx = canvas.getContext('2d');
+
+      let width = 0;
+      let height = 0;
+      let dpr = window.devicePixelRatio || 1;
+
+      function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        ctx.scale(dpr, dpr);
+      }
+      window.addEventListener('resize', resize);
+      resize();
+
+      // Curved musical staff configuration
+      // The staff curves gently upwards from lower-left to upper-right like an ascending ribbon/slide
+      const LINE_COUNT = 5;
+      const LINE_SPACING = 15; // pixels between each stave line
+
+      function getStaffCenter(t, time) {
+        // t ranges from 0 to 1 (left to right)
+        // x spans across the viewport with margin
+        const x = t * (width + 240) - 120;
+
+        // Curve from lower ground (bottom-left: ~82% height) up to top-right (~18% height)
+        // with gentle harmonic sine waves creating a stylistic melodic arch
+        const baseElevation = height * (0.82 - 0.64 * Math.pow(t, 0.88));
+        const wave = Math.sin(t * Math.PI * 2.2 + time * 0.0006) * 35;
+        const wave2 = Math.cos(t * Math.PI * 1.4 - time * 0.0004) * 20;
+        const y = baseElevation + wave + wave2;
+
+        return { x, y };
+      }
+
+      // Secondary subtle harmonic staff across upper-middle background
+      function getSecondaryStaffCenter(t, time) {
+        const x = t * (width + 240) - 120;
+        const baseElevation = height * (0.48 - 0.32 * t);
+        const wave = Math.cos(t * Math.PI * 2.5 + time * 0.0005) * 28;
+        return { x, y: baseElevation + wave };
+      }
+
+      // Musical note symbols to float on/between lines
+      const NOTE_SYMBOLS = ['♩', '♪', '♫', '♬', '𝅗𝅥', '𝄞', '𝄢', '♭', '♯', '♮'];
+
+      // Note particles traveling along the staves
+      const NOTES_COUNT = 36;
+      const notes = [];
+
+      for (let i = 0; i < NOTES_COUNT; i++) {
+        notes.push({
+          staff: Math.random() > 0.35 ? 1 : 2, // 1 = main rising staff, 2 = secondary
+          t: Math.random(), // position along curve (0 to 1)
+          speed: 0.00018 + Math.random() * 0.00035, // traveling speed left-to-right
+          // On and between the 5 lines: offsets from -2 to +2 in increments of 0.5
+          lineSlot: (Math.floor(Math.random() * 9) - 4) * 0.5,
+          bobPhase: Math.random() * Math.PI * 2,
+          bobSpeed: 0.002 + Math.random() * 0.003,
+          bobAmp: 3 + Math.random() * 5, // gentle bobbing up and down
+          symbol: NOTE_SYMBOLS[Math.floor(Math.random() * NOTE_SYMBOLS.length)],
+          size: 20 + Math.random() * 16,
+          baseAlpha: 0.18 + Math.random() * 0.35,
+          colorHue: Math.random() > 0.3 ? '#F59E0B' : '#FDE68A'
+        });
+      }
+
+      let startTime = null;
+
+      function render(now) {
+        if (!startTime) startTime = now;
+        const time = now - startTime;
+
+        ctx.clearRect(0, 0, width, height);
+
+        // --- 1. Draw Secondary Curved Staff ---
+        ctx.save();
+        ctx.strokeStyle = 'rgba(217, 119, 6, 0.07)';
+        ctx.lineWidth = 1.2;
+        const steps = 80;
+
+        for (let line = -2; line <= 2; line++) {
+          ctx.beginPath();
+          for (let s = 0; s <= steps; s++) {
+            const t = s / steps;
+            const pt = getSecondaryStaffCenter(t, time);
+            const lineY = pt.y + line * (LINE_SPACING * 0.85);
+            if (s === 0) ctx.moveTo(pt.x, lineY);
+            else ctx.lineTo(pt.x, lineY);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // --- 2. Draw Primary Ascending Stylistic Staff ---
+        ctx.save();
+        ctx.lineWidth = 1.6;
+        for (let line = -2; line <= 2; line++) {
+          ctx.beginPath();
+          // Subtle gradient across lines
+          const grad = ctx.createLinearGradient(0, height * 0.85, width, height * 0.15);
+          grad.addColorStop(0, 'rgba(217, 119, 6, 0.08)');
+          grad.addColorStop(0.5, 'rgba(245, 158, 11, 0.22)');
+          grad.addColorStop(1, 'rgba(217, 119, 6, 0.12)');
+          ctx.strokeStyle = grad;
+
+          for (let s = 0; s <= steps; s++) {
+            const t = s / steps;
+            const pt = getStaffCenter(t, time);
+            const lineY = pt.y + line * LINE_SPACING;
+            if (s === 0) ctx.moveTo(pt.x, lineY);
+            else ctx.lineTo(pt.x, lineY);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // --- 3. Draw Floating Musical Notes ---
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        for (let i = 0; i < notes.length; i++) {
+          const n = notes[i];
+
+          // Advance left to right
+          n.t += n.speed;
+          if (n.t > 1.05) {
+            n.t = -0.05;
+            n.lineSlot = (Math.floor(Math.random() * 9) - 4) * 0.5;
+            n.speed = 0.00018 + Math.random() * 0.00035;
+            n.symbol = NOTE_SYMBOLS[Math.floor(Math.random() * NOTE_SYMBOLS.length)];
+          }
+
+          // Calculate point on the respective staff
+          const pt = n.staff === 1 ? getStaffCenter(n.t, time) : getSecondaryStaffCenter(n.t, time);
+          const spacing = n.staff === 1 ? LINE_SPACING : LINE_SPACING * 0.85;
+
+          // Target line/space + gentle bobbing up and down
+          const bob = Math.sin(time * n.bobSpeed + n.bobPhase) * n.bobAmp;
+          const noteY = pt.y + (n.lineSlot * spacing) + bob;
+          const noteX = pt.x;
+
+          // Edge fading (fade in on left, fade out on right)
+          let edgeAlpha = 1;
+          if (n.t < 0.08) {
+            edgeAlpha = Math.max(0, n.t / 0.08);
+          } else if (n.t > 0.9) {
+            edgeAlpha = Math.max(0, (1.05 - n.t) / 0.15);
+          }
+
+          const currentAlpha = n.baseAlpha * edgeAlpha;
+          if (currentAlpha > 0.01) {
+            ctx.save();
+            ctx.globalAlpha = currentAlpha;
+            ctx.fillStyle = n.colorHue;
+            ctx.font = `${n.size}px "Segoe UI Symbol", "Apple Symbols", sans-serif`;
+            ctx.shadowColor = 'rgba(245, 158, 11, 0.4)';
+            ctx.shadowBlur = 8;
+            ctx.fillText(n.symbol, noteX, noteY);
+            ctx.restore();
+          }
+        }
+        ctx.restore();
+
+        requestAnimationFrame(render);
+      }
+
+      requestAnimationFrame(render);
+    })();
+  </script>
 </body>
 </html>

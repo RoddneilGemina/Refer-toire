@@ -45,6 +45,7 @@ jobs:
           mkdir -p dist
           # 1. Root Landing Page
           cp index.html dist/index.html
+          cp refertoire-logo.png dist/refertoire-logo.png
           touch dist/.nojekyll
 
           # 2. Web Demo (/web)

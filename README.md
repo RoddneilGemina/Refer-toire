@@ -1,6 +1,7 @@
 # 🎶 Refertoire
 
-> **Modern Choral Repertoire Manager & Offline Sheet Music Sync Engine**  
+> **Ensemble Repertoire Syncing App** • by **RoddneilGemina**  
+> *Designed to remove the hassle of forgetting specific pieces to learn or to keep track of.*  
 > Built with Expo SDK 57, React Native, Expo Router, Mozilla PDF.js, Supabase, and TypeScript.
 
 [![Deploy to GitHub Pages](https://github.com/refertoire/refertoire.github.io/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/refertoire/refertoire.github.io/actions/workflows/deploy-pages.yml)
@@ -13,8 +14,8 @@
 
 | Destination | Path | Description |
 | :--- | :--- | :--- |
-| **🌐 Root Portal** | [https://refertoire.github.io/](https://refertoire.github.io/) | Landing page showcasing features with launch buttons |
-| **💻 Web Application Demo** | [https://refertoire.github.io/web/](https://refertoire.github.io/web/) | Full interactive choral repertoire web app |
+| **🌐 Root Portal** | [https://refertoire.github.io/](https://refertoire.github.io/) | Landing page with live music staff animation, by RoddneilGemina |
+| **💻 Web Application Demo** | [https://refertoire.github.io/web/](https://refertoire.github.io/web/) | Full interactive ensemble repertoire web app |
 | **📱 Android APK Direct Download** | [https://refertoire.github.io/apk/Refertoire.apk](https://refertoire.github.io/apk/Refertoire.apk) | Direct binary download (~49 MB standalone APK) |
 | **📦 Android APK Download Page** | [https://refertoire.github.io/apk/](https://refertoire.github.io/apk/) | Auto-download page with installation steps |
 
@@ -22,9 +23,9 @@
 
 ## 📖 Overview
 
-**Refer-toire** is an offline-first mobile and desktop-web application designed specifically for choirs, choral societies, vocal ensembles, and church music programs.
+**Refer-toire** is an Ensemble Repertoire Syncing app designed to remove the hassle of forgetting specific pieces to learn or to keep track of. Built by **RoddneilGemina** for choirs, choral societies, vocal ensembles, and church music programs.
 
-In choral performance environments, singers frequently rehearse in historic stone cathedrals, sanctuaries, or backstage staging halls with weak or non-existent Wi-Fi and cellular reception. Refer-toire solves this by pairing singers to their ensemble via an **Access Code**. Upon verification against the database, the app syncs the ensemble's repertoire manifest, downloads all high-resolution sheet music PDFs to local storage, and presents scores with an interactive, stage-ready sheet music reader.
+In performance and rehearsal environments, singers frequently rehearse in historic stone cathedrals, sanctuaries, or backstage staging halls with weak or non-existent Wi-Fi and cellular reception. Refer-toire solves this by pairing singers to their ensemble via an **Access Code**. Upon verification against the database, the app syncs the ensemble's repertoire manifest, downloads all high-resolution sheet music PDFs to local storage, and presents scores with an interactive, stage-ready sheet music reader.
 
 ---
 
