@@ -306,15 +306,6 @@ export default function SettingsScreen() {
                 <Text style={styles.shareCodeBtnText}>Share Code</Text>
               </TouchableOpacity>
             </View>
-
-            <TouchableOpacity
-              style={[styles.adminUploadBtn, { backgroundColor: theme.card, borderColor: theme.border }]}
-              onPress={handlePickScoreFile}>
-              <Ionicons name="cloud-upload-outline" size={18} color={theme.tint} style={{ marginRight: 8 }} />
-              <Text style={[styles.adminUploadBtnText, { color: theme.text }]}>
-                Upload New Sheet Music (PDF)
-              </Text>
-            </TouchableOpacity>
           </View>
         )}
 
