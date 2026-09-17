@@ -15,6 +15,8 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { AppRelease, UpdateProgressState } from '@/types/update';
 import { UpdateService } from '@/services/updateService';
 
+import * as FileSystem from 'expo-file-system/legacy';
+
 interface UpdateAvailableModalProps {
   visible: boolean;
   release: AppRelease | null;
@@ -35,6 +37,7 @@ export default function UpdateAvailableModal({
     bytesWritten: 0,
     totalBytesExpected: 0,
   });
+  const [downloadedUri, setDownloadedUri] = useState<string | null>(null);
 
   if (!visible || !release) {
     return null;
@@ -53,7 +56,19 @@ export default function UpdateAvailableModal({
   };
 
   const handleStartUpdate = async () => {
+    // If download is already complete, directly launch the installer without re-downloading
+    if (isReadyToInstall) {
+      const filename = `Refertoire-v${release.version}-b${release.buildNumber || 1}.apk`;
+      const fallbackUri = `${FileSystem.documentDirectory || FileSystem.cacheDirectory}${filename}`;
+      await UpdateService.installDownloadedApk(downloadedUri || fallbackUri, release);
+      return;
+    }
+
     try {
+      const filename = `Refertoire-v${release.version}-b${release.buildNumber || 1}.apk`;
+      const targetUri = `${FileSystem.documentDirectory || FileSystem.cacheDirectory}${filename}`;
+      setDownloadedUri(targetUri);
+
       await UpdateService.downloadAndInstallUpdate(release, state => {
         setProgressState(state);
       });

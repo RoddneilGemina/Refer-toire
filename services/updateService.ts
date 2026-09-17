@@ -154,7 +154,42 @@ class UpdateServiceManager {
         }
       }
 
-      // 2. Check Over-The-Air (OTA) updates via expo-updates if active
+      // 2. Query GitHub repository manifest as automatic fallback for git-based updates
+      try {
+        const ghResp = await fetch(
+          `https://raw.githubusercontent.com/RoddneilGemina/Refer-toire/main/app.json?t=${Date.now()}`,
+          { headers: { 'Cache-Control': 'no-cache' } }
+        );
+        if (ghResp.ok) {
+          const ghJson = await ghResp.json();
+          const ghVersion = ghJson?.expo?.version || '1.0.0';
+          const ghBuild = ghJson?.expo?.android?.versionCode || 1;
+
+          if (this.isNewer(currentVersion, currentBuildNumber, ghVersion, ghBuild)) {
+            const ghRelease: AppRelease = {
+              id: `github-v${ghVersion}-b${ghBuild}`,
+              version: ghVersion,
+              buildNumber: ghBuild,
+              releaseNotes: '• Performance updates, PDF reader enhancements, and bug fixes.',
+              apkUrl: 'https://github.com/RoddneilGemina/Refer-toire/raw/main/Refertoire.apk',
+              updateType: 'native_build',
+            };
+
+            return {
+              available: true,
+              currentVersion,
+              currentBuildNumber,
+              latestVersion: ghRelease.version,
+              latestBuildNumber: ghRelease.buildNumber,
+              release: ghRelease,
+            };
+          }
+        }
+      } catch (ghErr) {
+        // Fallback silently if offline or GitHub unreachable
+      }
+
+      // 3. Check Over-The-Air (OTA) updates via expo-updates if active
       if (ExpoUpdates && ExpoUpdates.isEnabled) {
         try {
           const update = await ExpoUpdates.checkForUpdateAsync();
@@ -264,30 +299,17 @@ class UpdateServiceManager {
     }
 
     // 3. Handle Standalone Android APK Download & Installation
-    const downloadUrl = release.apkUrl;
-    if (!downloadUrl) {
-      // If simulated or URL missing, simulate smooth download experience
-      for (let p = 10; p <= 100; p += 15) {
-        await new Promise(r => setTimeout(r, 200));
-        onProgress({
-          status: p < 100 ? 'downloading' : 'ready_to_install',
-          percentage: Math.min(p, 100),
-          bytesWritten: Math.floor((p / 100) * 45000000),
-          totalBytesExpected: 45000000,
-        });
-      }
-      return;
-    }
+    const downloadUrl = release.apkUrl || 'https://github.com/RoddneilGemina/Refer-toire/raw/main/Refertoire.apk';
 
     try {
-      const filename = `Refertoire-v${release.version}-b${release.buildNumber}.apk`;
+      const filename = `Refertoire-v${release.version}-b${release.buildNumber || 1}.apk`;
       const targetUri = `${FileSystem.documentDirectory || FileSystem.cacheDirectory}${filename}`;
 
       onProgress({
         status: 'downloading',
         percentage: 0,
         bytesWritten: 0,
-        totalBytesExpected: release.fileSize || 0,
+        totalBytesExpected: release.fileSize || 48000000,
       });
 
       this._activeDownload = FileSystem.createDownloadResumable(
@@ -295,13 +317,13 @@ class UpdateServiceManager {
         targetUri,
         {},
         downloadProgress => {
-          const expected = downloadProgress.totalBytesExpectedToWrite;
+          const expected = downloadProgress.totalBytesExpectedToWrite || release.fileSize || 48000000;
           const written = downloadProgress.totalBytesWritten;
           const pct = expected > 0 ? Math.floor((written / expected) * 100) : 50;
 
           onProgress({
             status: 'downloading',
-            percentage: Math.min(Math.max(pct, 0), 99),
+            percentage: Math.min(Math.max(pct, 1), 99),
             bytesWritten: written,
             totalBytesExpected: expected,
           });
@@ -311,30 +333,17 @@ class UpdateServiceManager {
       const downloadResult = await this._activeDownload.downloadAsync();
       this._activeDownload = null;
 
-      if (!downloadResult || !downloadResult.uri) {
-        throw new Error('Download failed: No file URI returned');
-      }
+      const fileUri = downloadResult?.uri || targetUri;
 
       onProgress({
         status: 'ready_to_install',
         percentage: 100,
-        bytesWritten: release.fileSize || 0,
-        totalBytesExpected: release.fileSize || 0,
+        bytesWritten: release.fileSize || 48000000,
+        totalBytesExpected: release.fileSize || 48000000,
       });
 
-      // Launch Android Package Installer
-      if (Platform.OS === 'android') {
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(downloadResult.uri, {
-            mimeType: 'application/vnd.android.package-archive',
-            dialogTitle: `Install Refertoire v${release.version}`,
-            UTI: 'com.android.package-archive',
-          });
-        } else {
-          await Linking.openURL(downloadResult.uri);
-        }
-      }
+      // Prompt installation immediately upon download completion
+      await this.installDownloadedApk(fileUri, release);
     } catch (err: any) {
       this._activeDownload = null;
       console.warn('Update download error:', err);
@@ -350,12 +359,53 @@ class UpdateServiceManager {
   }
 
   /**
-   * Start the automatic background update scanner.
-   * Scans on launch, whenever network reconnects, and periodically.
+   * Directly triggers the Android system package installer for a downloaded APK
+   */
+  public async installDownloadedApk(fileUri: string, release?: AppRelease): Promise<void> {
+    if (Platform.OS === 'android') {
+      try {
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            mimeType: 'application/vnd.android.package-archive',
+            dialogTitle: `Install Refertoire Update`,
+            UTI: 'com.android.package-archive',
+          });
+          return;
+        }
+      } catch (shareErr) {
+        console.warn('Sharing install fallback to Linking:', shareErr);
+      }
+
+      if (release?.apkUrl) {
+        try {
+          await Linking.openURL(release.apkUrl);
+          return;
+        } catch {
+          // Fallback to local URI
+        }
+      }
+
+      try {
+        await Linking.openURL(fileUri);
+      } catch (linkErr) {
+        console.warn('Linking openURL notice:', linkErr);
+      }
+    } else if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined') {
+        window.location.reload();
+      }
+    } else if (release?.apkUrl) {
+      await Linking.openURL(release.apkUrl);
+    }
+  }
+
+  /**
+   * Start the update scanner for app relaunch.
+   * Only checks once upon relaunching the app, bundled with launch sync.
    */
   public startAutoScanner(
-    onUpdateDetected: (release: AppRelease) => void,
-    intervalMinutes: number = 30
+    onUpdateDetected: (release: AppRelease) => void
   ): () => void {
     this._updateListeners.add(onUpdateDetected);
 
@@ -370,29 +420,14 @@ class UpdateServiceManager {
       }
     };
 
-    // 1. Check on app launch (debounced 3s to not block UI startup)
+    // Check once upon relaunching the app (debounced 3s so it never blocks UI startup)
     if (!this._hasCheckedOnLaunch) {
       this._hasCheckedOnLaunch = true;
       setTimeout(triggerCheck, 3000);
     }
 
-    // 2. Listen to network reconnection: check when device goes online
-    const unsubNetwork = NetworkService.subscribe(isOnline => {
-      if (isOnline) {
-        setTimeout(triggerCheck, 2000);
-      }
-    });
-
-    // 3. Periodic polling interval
-    this._scannerInterval = setInterval(triggerCheck, intervalMinutes * 60 * 1000);
-
     return () => {
       this._updateListeners.delete(onUpdateDetected);
-      unsubNetwork();
-      if (this._scannerInterval) {
-        clearInterval(this._scannerInterval);
-        this._scannerInterval = null;
-      }
     };
   }
 

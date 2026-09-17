@@ -220,29 +220,19 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
     initSession();
   }, [syncScoresForInstance]);
 
-  // Automatic Online / Offline synchronization based on real-time internet connectivity
+  // Automatic Online / Offline state tracking based on real-time network connectivity
+  // Runs once on mount with NO dependency loop so it never triggers repeated sync requests
   useEffect(() => {
     const unsubscribe = NetworkService.subscribe((isOnline) => {
       const offline = !isOnline;
       setIsOfflineModeState(offline);
       StorageService.setOfflineMode(offline);
-
-      if (isOnline && currentInstance) {
-        // Automatically refresh cloud instance and sync when internet access is restored
-        DatabaseService.getGroupByCode(currentInstance.code).then(fresh => {
-          if (fresh) {
-            setCurrentInstance(fresh);
-            syncScoresForInstance(fresh);
-          }
-        });
-        loadEnsembleMembers();
-      }
     });
 
     return () => {
       unsubscribe();
     };
-  }, [currentInstance, syncScoresForInstance, loadEnsembleMembers]);
+  }, []);
 
   // Handle Sign Up
   const signUp = async (params: SignUpParams) => {

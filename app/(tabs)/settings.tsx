@@ -76,19 +76,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleTestUpdatePopup = () => {
-    UpdateService.simulateUpdate({
-      version: '1.0.1',
-      buildNumber: UpdateService.currentBuildNumber + 1,
-      releaseNotes: '• Automatic update scanner & in-app updater\n• 100% offline local PDF.js engine\n• Instant sheet music preloading\n• Favorite sheet music pinned to top\n• Optimized layout with mobile keyboard buffer',
-      apkUrl: '',
-      fileSize: 42500000,
-      isMandatory: false,
-      publishedAt: new Date().toISOString(),
-      updateType: 'native_build',
-    });
-  };
-
   const handlePickScoreFile = async () => {
     if (isOfflineMode || !NetworkService.isOnline()) {
       Alert.alert(
@@ -468,7 +455,7 @@ export default function SettingsScreen() {
             <TouchableOpacity
               style={[
                 styles.actionButton,
-                { backgroundColor: theme.surfaceSubtle, borderColor: theme.border },
+                { backgroundColor: theme.surfaceSubtle, borderColor: theme.border, flex: 1, justifyContent: 'center' },
               ]}
               onPress={handleCheckForUpdates}
               disabled={isCheckingUpdate}>
@@ -478,19 +465,7 @@ export default function SettingsScreen() {
                 <Ionicons name="refresh-outline" size={16} color={theme.text} style={{ marginRight: 6 }} />
               )}
               <Text style={[styles.actionButtonText, { color: theme.text }]}>
-                {isCheckingUpdate ? 'Scanning...' : 'Check for Updates'}
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.actionButton,
-                { backgroundColor: theme.surfaceSubtle, borderColor: theme.border },
-              ]}
-              onPress={handleTestUpdatePopup}>
-              <Ionicons name="sparkles-outline" size={16} color="#0D74CE" style={{ marginRight: 6 }} />
-              <Text style={[styles.actionButtonText, { color: '#0D74CE' }]}>
-                Test Popup
+                {isCheckingUpdate ? 'Scanning for Updates...' : 'Check for Updates'}
               </Text>
             </TouchableOpacity>
           </View>

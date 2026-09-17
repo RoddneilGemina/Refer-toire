@@ -89,6 +89,27 @@ export default function PdfViewerWeb({
     width: 650,
     height: 900,
   });
+  const [windowDimensions, setWindowDimensions] = useState<{ w: number; h: number }>({
+    w: typeof window !== 'undefined' ? window.innerWidth : 800,
+    h: typeof window !== 'undefined' ? window.innerHeight : 1000,
+  });
+
+  // Track window resize to re-scale sheet music appropriately without reloading document
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let timer: any = null;
+    const handleResize = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        setWindowDimensions({ w: window.innerWidth, h: window.innerHeight });
+      }, 200);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      clearTimeout(timer);
+    };
+  }, []);
 
   const currentPageRef = useRef(currentPage);
   currentPageRef.current = currentPage;
@@ -208,13 +229,18 @@ export default function PdfViewerWeb({
         if (!ctx) return;
 
         const containerWidth = containerRef.current
-          ? containerRef.current.clientWidth - 40
+          ? Math.max(containerRef.current.clientWidth - 32, 200)
           : 680;
+        const containerHeight = containerRef.current
+          ? Math.max(containerRef.current.clientHeight - 60, 200)
+          : 900;
         const unscaledViewport = page.getViewport({ scale: 1.0 });
 
-        // Calculate auto-fit scale
-        let baseScale = (containerWidth / unscaledViewport.width) * 0.95;
-        baseScale = Math.min(Math.max(baseScale, 0.7), 2.2);
+        // Calculate auto-fit scale considering BOTH width and height so sheet music is never clipped
+        const scaleW = (containerWidth / unscaledViewport.width) * 0.98;
+        const scaleH = (containerHeight / unscaledViewport.height) * 0.98;
+        let baseScale = Math.min(scaleW, scaleH);
+        baseScale = Math.min(Math.max(baseScale, 0.4), 2.5);
 
         const finalScale = baseScale * zoomScale;
         const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
@@ -271,7 +297,7 @@ export default function PdfViewerWeb({
     return () => {
       isCancelled = true;
     };
-  }, [pdfDoc, totalPages, zoomScale, useNativeEmbed]);
+  }, [pdfDoc, totalPages, zoomScale, useNativeEmbed, windowDimensions]);
 
   // 4. Render Continuous Scroll Mode
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
