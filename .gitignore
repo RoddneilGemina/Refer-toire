@@ -2,12 +2,16 @@
 
 # dependencies
 node_modules/
+web/node_modules/
 
 # Expo
 .expo/
+web/.expo/
 dist/
+web/dist/
 web-build/
 expo-env.d.ts
+web/expo-env.d.ts
 
 # Native
 .kotlin/
@@ -33,6 +37,8 @@ yarn-error.*
 # local env files
 .env
 .env*.local
+web/.env
+web/.env*.local
 
 # typescript
 *.tsbuildinfo
@@ -40,6 +46,8 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+web/ios
+web/android
 
 # scratch
 scratch/

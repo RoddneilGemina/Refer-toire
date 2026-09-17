@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Refertoire — Modern Choral Repertoire Manager & Offline Sheet Music Sync Engine</title>
+  <meta name="description" content="Offline-first choral score manager with Mozilla PDF.js viewer, Stage Mode glare elimination, and instant ensemble access code sync.">
+  <meta name="theme-color" content="#080B11">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #080B11;
+      --card-bg: rgba(15, 21, 35, 0.75);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --gold: #F59E0B;
+      --gold-dark: #D97706;
+      --gold-glow: rgba(245, 158, 11, 0.25);
+      --text-main: #F8FAFC;
+      --text-muted: #94A3B8;
+      --text-dim: #64748B;
+      --accent-blue: #38BDF8;
+      --green: #10B981;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.6;
+      overflow-x: hidden;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Ambient background lighting */
+    .ambient-glow {
+      position: fixed;
+      top: -200px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 900px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(217, 119, 6, 0.12) 0%, rgba(56, 189, 248, 0.04) 40%, transparent 70%);
+      filter: blur(80px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 0 24px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Navigation Bar */
+    header {
+      padding: 24px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(8, 11, 17, 0.85);
+    }
+
+    .nav-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-main);
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #D97706, #B45309);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 4px 12px var(--gold-glow);
+    }
+
+    .brand-name {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 14px;
+      transition: color 0.2s;
+    }
+
+    .nav-link:hover {
+      color: var(--text-main);
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 80px 0 60px 0;
+      text-align: center;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      color: #FBBF24;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 6px 16px;
+      border-radius: 9999px;
+      margin-bottom: 24px;
+      letter-spacing: 0.2px;
+    }
+
+    .hero-title {
+      font-size: clamp(36px, 5.5vw, 64px);
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -1.5px;
+      margin-bottom: 20px;
+      background: linear-gradient(180deg, #FFFFFF 0%, #CBD5E1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-title span {
+      background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-sub {
+      font-size: clamp(16px, 2vw, 20px);
+      color: var(--text-muted);
+      max-width: 680px;
+      margin: 0 auto 40px auto;
+      line-height: 1.6;
+    }
+
+    /* Primary Action Portals */
+    .action-portals {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 60px;
+    }
+
+    .btn-portal {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 32px;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      cursor: pointer;
+    }
+
+    .btn-web {
+      background: linear-gradient(135deg, #D97706, #B45309);
+      color: #FFFFFF;
+      box-shadow: 0 10px 25px -5px var(--gold-glow);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .btn-web:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 16px 30px -5px rgba(217, 119, 6, 0.4);
+      background: linear-gradient(135deg, #F59E0B, #D97706);
+    }
+
+    .btn-apk {
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--text-main);
+      border: 1px solid var(--card-border);
+      backdrop-filter: blur(8px);
+    }
+
+    .btn-apk:hover {
+      background: rgba(255, 255, 255, 0.1);
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .btn-badge {
+      background: rgba(0, 0, 0, 0.25);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #F8FAFC;
+    }
+
+    /* Directory Structure Visualizer */
+    .dir-banner {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 760px;
+      margin: 0 auto 70px auto;
+      text-align: left;
+      backdrop-filter: blur(12px);
+    }
+
+    .dir-banner-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      font-size: 13px;
+      color: var(--text-dim);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .dir-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .dir-card {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 12px;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      text-decoration: none;
+      color: inherit;
+      transition: all 0.2s;
+    }
+
+    .dir-card:hover {
+      border-color: var(--gold);
+      transform: translateY(-1px);
+    }
+
+    .dir-card-icon {
+      font-size: 28px;
+    }
+
+    .dir-card-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .dir-card-path {
+      font-size: 12px;
+      color: var(--gold);
+      font-family: monospace;
+      margin-top: 2px;
+    }
+
+    /* Features Grid */
+    .section-title {
+      font-size: 28px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+
+    .section-sub {
+      color: var(--text-muted);
+      text-align: center;
+      margin-bottom: 40px;
+      font-size: 15px;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+      margin-bottom: 80px;
+    }
+
+    .feature-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 32px;
+      backdrop-filter: blur(12px);
+      transition: border-color 0.2s, transform 0.2s;
+    }
+
+    .feature-card:hover {
+      border-color: rgba(245, 158, 11, 0.4);
+      transform: translateY(-4px);
+    }
+
+    .feature-icon {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      background: rgba(245, 158, 11, 0.12);
+      border: 1px solid rgba(245, 158, 11, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      margin-bottom: 20px;
+    }
+
+    .feature-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--text-main);
+    }
+
+    .feature-desc {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* Footer */
+    footer {
+      margin-top: auto;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 36px 0;
+      text-align: center;
+      font-size: 14px;
+      color: var(--text-dim);
+    }
+
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin-bottom: 16px;
+    }
+
+    .footer-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover {
+      color: var(--gold);
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient-glow"></div>
+
+  <!-- Header -->
+  <header>
+    <div class="container nav-content">
+      <a href="./" class="brand">
+        <div class="brand-icon">🎶</div>
+        <div class="brand-name">Refertoire</div>
+      </a>
+      <div class="nav-actions">
+        <a href="./web/" class="nav-link">Web App</a>
+        <a href="./apk/" class="nav-link">Android APK</a>
+        <a href="https://github.com/refertoire/refertoire.github.io" class="nav-link" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <main class="container">
+    <section class="hero">
+      <div class="badge">
+        <span>✨</span> Choral Performance & Repertoire Sync Engine
+      </div>
+      <h1 class="hero-title">
+        Stage-Ready Scores.<br><span>100% Offline</span> Resilience.
+      </h1>
+      <p class="hero-sub">
+        Designed specifically for choral societies, cathedral choirs, and vocal ensembles rehearsing in thick stone sanctuaries and Wi-Fi dead zones.
+      </p>
+
+      <!-- Primary Action Buttons -->
+      <div class="action-portals">
+        <a href="./web/" class="btn-portal btn-web">
+          <span>🌐</span>
+          <span>Launch Web Demo</span>
+          <span class="btn-badge">v1.0.0</span>
+        </a>
+        <a href="./apk/Refertoire.apk" class="btn-portal btn-apk" download="Refertoire.apk">
+          <span>📱</span>
+          <span>Download Android APK</span>
+          <span class="btn-badge">48.9 MB</span>
+        </a>
+      </div>
+
+      <!-- Clean Directory Links Card -->
+      <div class="dir-banner">
+        <div class="dir-banner-header">
+          <span>Directory Navigation</span>
+          <span>refertoire.github.io</span>
+        </div>
+        <div class="dir-grid">
+          <a href="./web/" class="dir-card">
+            <div class="dir-card-icon">💻</div>
+            <div>
+              <div class="dir-card-title">Web Application Demo</div>
+              <div class="dir-card-path">/web/</div>
+            </div>
+          </a>
+          <a href="./apk/" class="dir-card">
+            <div class="dir-card-icon">📦</div>
+            <div>
+              <div class="dir-card-title">Android APK Downloads</div>
+              <div class="dir-card-path">/apk/</div>
+            </div>
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Key Features -->
+    <h2 class="section-title">Built for Choral Directors & Choristers</h2>
+    <p class="section-sub">Zero complicated logins. Instant code pairing, high-fidelity score rendering, and stage glare reduction.</p>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🔑</div>
+        <h3 class="feature-title">Access Code Instant Sync</h3>
+        <p class="feature-desc">
+          Singers join by entering their choir's 8-character access code. The app instantly verifies against the database and synchronizes all repertoire scores offline.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🎼</div>
+        <h3 class="feature-title">Mozilla PDF.js Score Viewer</h3>
+        <p class="feature-desc">
+          High-DPI canvas rendering with native devicePixelRatio scaling. Features single-page turns, continuous scroll, precision zoom (60%–250%), and foot pedal support.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🎭</div>
+        <h3 class="feature-title">Concert Hall Stage Mode</h3>
+        <p class="feature-desc">
+          Inverts sheet music to high-contrast white & gold notation on an ultra-dark background to eliminate face glare and preserve night vision on darkened concert stages.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">⚡</div>
+        <h3 class="feature-title">100% Offline Storage</h3>
+        <p class="feature-desc">
+          Scores are cached in persistent local storage. Rehearsals in ancient cathedrals or underground rehearsal halls continue without disruption.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">📚</div>
+        <h3 class="feature-title">Choral Voicing & Season Filters</h3>
+        <p class="feature-desc">
+          Filter repertoire by SATB, SSAA, TTBB, Liturgical Season (Advent, Lent, Easter, Ordinary Time), composer surname, and conductor rehearsal notes.
+        </p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">📤</div>
+        <h3 class="feature-title">File-First PDF Uploads</h3>
+        <p class="feature-desc">
+          Directors can upload scores with automatic title parsing and instant broadcast to all ensemble choristers via Supabase Cloud Storage.
+        </p>
+      </div>
+    </div>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <div class="footer-links">
+        <a href="./web/">Web Demo</a>
+        <a href="./apk/">APK Download</a>
+        <a href="https://github.com/refertoire/refertoire.github.io" target="_blank" rel="noopener">GitHub Repository</a>
+        <a href="https://github.com/refertoire/refertoire.github.io/blob/main/README.md" target="_blank" rel="noopener">Documentation</a>
+      </div>
+      <p>© 2026 Refertoire. Built with Expo SDK 57, React Native, Mozilla PDF.js & Supabase.</p>
+    </div>
+  </footer>
+</body>
+</html>

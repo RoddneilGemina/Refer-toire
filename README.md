@@ -4,14 +4,19 @@
 > Built with Expo SDK 57, React Native, Expo Router, Mozilla PDF.js, Supabase, and TypeScript.
 
 [![Deploy to GitHub Pages](https://github.com/refertoire/refertoire.github.io/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/refertoire/refertoire.github.io/actions/workflows/deploy-pages.yml)
-[![Web App](https://img.shields.io/badge/Web_App-refertoire.github.io-blue?style=flat&logo=googlechrome)](https://refertoire.github.io/)
-[![Download Android APK](https://img.shields.io/badge/Android_APK-Download-success?style=flat&logo=android)](https://refertoire.github.io/demoapk/Refertoire.apk)
+[![Web Demo](https://img.shields.io/badge/Web_Demo-refertoire.github.io%2Fweb-blue?style=flat&logo=googlechrome)](https://refertoire.github.io/web/)
+[![Download Android APK](https://img.shields.io/badge/Android_APK-refertoire.github.io%2Fapk-success?style=flat&logo=android)](https://refertoire.github.io/apk/Refertoire.apk)
 
 ---
 
-### 🚀 Live Deployment & Download
-- 🌐 **Live Web Application**: [https://refertoire.github.io](https://refertoire.github.io/)
-- 📱 **Android APK Direct Download**: [https://refertoire.github.io/demoapk/Refertoire.apk](https://refertoire.github.io/demoapk/Refertoire.apk)
+### 🚀 Live Deployment & Download Links
+
+| Destination | Path | Description |
+| :--- | :--- | :--- |
+| **🌐 Root Portal** | [https://refertoire.github.io/](https://refertoire.github.io/) | Landing page showcasing features with launch buttons |
+| **💻 Web Application Demo** | [https://refertoire.github.io/web/](https://refertoire.github.io/web/) | Full interactive choral repertoire web app |
+| **📱 Android APK Direct Download** | [https://refertoire.github.io/apk/Refertoire.apk](https://refertoire.github.io/apk/Refertoire.apk) | Direct binary download (~49 MB standalone APK) |
+| **📦 Android APK Download Page** | [https://refertoire.github.io/apk/](https://refertoire.github.io/apk/) | Auto-download page with installation steps |
 
 ---
 
@@ -63,40 +68,29 @@ In choral performance environments, singers frequently rehearse in historic ston
 ## 🛠️ Project Structure
 
 ```text
-Refer-toire/
-├── app/
-│   ├── (tabs)/
-│   │   ├── _layout.tsx           # Tab bar navigation (Repertoire, Programs, Settings)
-│   │   ├── index.tsx             # Main repertoire library, sorting, and search
-│   │   ├── setlists.tsx          # Concert setlists and performance orders
-│   │   └── settings.tsx          # Offline cache manager, voice part preference, sign-out
-│   ├── score/
-│   │   └── [id].tsx              # Interactive score viewer with Stage Mode & zoom
-│   ├── +html.tsx                 # Web static root with preloaded PDF.js runtime
-│   ├── login.tsx                 # Access code verification and group creation
-│   ├── modal.tsx                 # Ensemble overview modal
-│   └── _layout.tsx               # Root layout & RepertoireProvider context
-├── components/
-│   ├── PdfViewer.tsx             # Universal / Native PDF viewer component
-│   ├── PdfViewer.web.tsx         # High-DPI canvas PDF.js viewer for Web
-│   ├── PdfViewer.types.ts        # Viewer props, paper tones, and view mode types
-│   ├── UploadScoreModal.tsx      # File-first upload dialog with metadata inputs
-│   └── Themed.tsx                # Theme-aware layout components
-├── context/
-│   └── RepertoireContext.tsx     # Global React context for ensemble data and sync
-├── services/
-│   ├── databaseService.ts        # Supabase PostgreSQL queries and score uploads
-│   ├── downloadService.ts        # Offline PDF download and storage management
-│   ├── storageService.ts         # Local AsyncStorage persistence
-│   ├── instanceService.ts        # Ensemble instance configurations
-│   └── choralPdfService.ts       # Authentic choral PDF generator & URI resolver
-├── types/
-│   └── repertoire.ts             # Domain models (ScoreItem, Instance, Voicing, Season)
-├── supabase/
-│   └── schema.sql                # PostgreSQL database schema & storage bucket config
-├── .env.example                  # Environment variable template
-├── app.json                      # Expo SDK 57 configuration
-└── package.json                  # Dependencies and build scripts
+refertoire.github.io/
+├── .github/
+│   └── workflows/
+│       └── deploy-pages.yml      # CI/CD: Automated build & GitHub Pages deployment
+├── apk/
+│   ├── Refertoire.apk            # Direct standalone Android APK binary (~49 MB)
+│   └── index.html                # Auto-download redirect page for /apk/
+├── web/                          # Expo SDK 57 React Native & Web application
+│   ├── app/                      # Expo Router navigation and screens
+│   │   ├── (tabs)/               # Tab bar (Repertoire, Programs, Settings)
+│   │   ├── score/[id].tsx        # Stage Mode sheet music viewer
+│   │   ├── login.tsx             # Access code verification & group setup
+│   │   └── download.tsx          # Client-side download handler
+│   ├── components/               # Mozilla PDF.js canvas viewer, modals, UI
+│   ├── services/                 # Supabase sync, offline downloads, updates
+│   ├── context/                  # RepertoireContext global state
+│   ├── constants/                # Colors, palettes, voice categories
+│   ├── types/                    # TypeScript interfaces and schema
+│   ├── app.json                  # Expo SDK 57 config (baseUrl: "/web")
+│   └── package.json              # Web app dependencies & Expo scripts
+├── index.html                    # Root portal landing page showcasing web & apk
+├── package.json                  # Root workspace script runner
+└── README.md
 ```
 
 ---
@@ -117,23 +111,23 @@ Refer-toire/
 
 2. **Install dependencies**:
    ```bash
+   cd web
    npm install
    ```
 
 3. **Configure environment variables**:
-   Copy `.env.example` to `.env` and configure your Supabase credentials:
+   Copy `.env.example` to `.env` in the `web/` directory:
    ```bash
    cp .env.example .env
-   ```
-   Edit `.env`:
-   ```env
-   EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-   EXPO_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
    ```
 
 4. **Start the development server**:
    ```bash
+   # From the web directory
    npm run start
+
+   # Or from the workspace root
+   npm start
    ```
 
    - Press **`w`** to open in your web browser.

@@ -41,7 +41,8 @@
       "expo-sharing"
     ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": true,
+      "baseUrl": "/web"
     },
     "extra": {
       "router": {},

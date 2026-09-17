@@ -645,7 +645,7 @@ export default function LoginScreen() {
           {Platform.OS === 'web' && (
             <TouchableOpacity
               style={[styles.apkBanner, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}
-              onPress={() => Linking.openURL('https://refertoire.github.io/demoapk/Refertoire.apk')}>
+              onPress={() => Linking.openURL('https://refertoire.github.io/apk/Refertoire.apk')}>
               <Ionicons name="logo-android" size={20} color="#22C55E" style={{ marginRight: 10 }} />
               <View style={{ backgroundColor: 'transparent', flex: 1 }}>
                 <Text style={[styles.apkBannerTitle, { color: theme.text }]}>Download Android App (.APK)</Text>

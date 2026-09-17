@@ -7,7 +7,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 export default function DownloadScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme];
-  const apkUrl = 'https://refertoire.github.io/demoapk/Refertoire.apk';
+  const apkUrl = 'https://refertoire.github.io/apk/Refertoire.apk';
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof window !== 'undefined') {

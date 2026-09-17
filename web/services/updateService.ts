@@ -171,7 +171,7 @@ class UpdateServiceManager {
               version: ghVersion,
               buildNumber: ghBuild,
               releaseNotes: '• Performance updates, PDF reader enhancements, and bug fixes.',
-              apkUrl: 'https://refertoire.github.io/demoapk/Refertoire.apk',
+              apkUrl: 'https://refertoire.github.io/apk/Refertoire.apk',
               updateType: 'native_build',
             };
 
@@ -301,7 +301,7 @@ class UpdateServiceManager {
     // 3. Handle Standalone Android APK Download & Installation
     const downloadUrl =
       release.apkUrl ||
-      'https://refertoire.github.io/demoapk/Refertoire.apk';
+      'https://refertoire.github.io/apk/Refertoire.apk';
 
     try {
       const filename = `Refertoire-v${release.version}-b${release.buildNumber || 1}.apk`;
