@@ -40,8 +40,10 @@ jobs:
           EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL || 'https://ctfxbeltcmmsvagecvyr.supabase.co' }}
           EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_rM0bbgfuaZJiCRUx_naPwg_mZbROvvl' }}
 
-      - name: Copy SPA 404 Fallback
-        run: cp dist/index.html dist/404.html
+      - name: Setup GitHub Pages Artifacts
+        run: |
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
