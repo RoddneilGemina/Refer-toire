@@ -8,6 +8,8 @@ import {
   ScrollView,
   SafeAreaView,
   Image,
+  Alert,
+  Platform,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +22,7 @@ import { SORT_OPTIONS } from '@/utils/sorting';
 import * as DocumentPicker from 'expo-document-picker';
 import UploadScoreModal, { SelectedPdfFile } from '@/components/UploadScoreModal';
 import NetworkStatusBar from '@/components/NetworkStatusBar';
+import { NetworkService } from '@/services/networkService';
 
 const VOICING_FILTERS: Array<Voicing | 'ALL'> = ['ALL', 'SATB', 'SSAA', 'TTBB', 'SAB'];
 const SEASON_FILTERS: Array<LiturgicalSeason | 'ALL'> = ['ALL', 'Lent', 'Holy Week', 'Christmas', 'Concert', 'Evensong', 'General'];
@@ -50,6 +53,7 @@ export default function RepertoireLibraryScreen() {
     isOfflineMode,
     setOfflineMode,
     toggleFavorite,
+    deleteScore,
     uploadScore,
     reSyncAll,
   } = useRepertoire();
@@ -58,6 +62,14 @@ export default function RepertoireLibraryScreen() {
   const [pendingUploadFile, setPendingUploadFile] = useState<SelectedPdfFile | null>(null);
 
   const handlePickScoreFile = async () => {
+    if (isOfflineMode || !NetworkService.isOnline()) {
+      Alert.alert(
+        'Upload Unavailable',
+        'You can only upload sheet music while in online mode with an active internet connection. Please disable Offline Mode in settings.'
+      );
+      return;
+    }
+
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ['application/pdf', 'application/*'],
@@ -74,6 +86,30 @@ export default function RepertoireLibraryScreen() {
       }
     } catch (err) {
       console.warn('Error opening file picker:', err);
+    }
+  };
+
+  const handleDeleteScore = (score: ScoreItem) => {
+    const confirmDelete = async () => {
+      const res = await deleteScore(score.id);
+      if (!res.success) {
+        Alert.alert('Delete Error', res.error || 'Failed to delete score.');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`Delete "${score.title}" from this ensemble repertoire?`)) {
+        confirmDelete();
+      }
+    } else {
+      Alert.alert(
+        'Delete Score',
+        `Are you sure you want to permanently remove "${score.title}" from this ensemble?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Delete', style: 'destructive', onPress: confirmDelete },
+        ]
+      );
     }
   };
 
@@ -118,82 +154,98 @@ export default function RepertoireLibraryScreen() {
         ]}
         onPress={() => router.push({ pathname: '/score/[id]', params: { id: item.id } })}
         activeOpacity={0.7}>
-        <View style={[styles.scoreCardContent, { backgroundColor: 'transparent' }]}>
-          {/* Top Row: Voicing, Season & Status */}
-          <View style={[styles.metaRow, { backgroundColor: 'transparent' }]}>
-            <View style={styles.badgesGroup}>
-              <View style={[styles.voicingBadge, { backgroundColor: voicingBg }]}>
-                <Text style={[styles.voicingText, { color: voicingTextColor }]}>
-                  {item.voicing}
-                </Text>
-              </View>
-              <View style={[styles.seasonBadge, { backgroundColor: theme.surfaceSubtle }]}>
-                <Text style={[styles.seasonText, { color: theme.subtext }]}>{item.season}</Text>
-              </View>
-              {item.genre && (
-                <View style={[styles.genreBadge, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}>
-                  <Text style={[styles.genreText, { color: theme.tint }]}>{item.genre}</Text>
+        <View style={styles.scoreCardRow}>
+          <View style={[styles.scoreCardContent, { backgroundColor: 'transparent', flex: 1 }]}>
+            {/* Top Row: Voicing, Season & Status */}
+            <View style={[styles.metaRow, { backgroundColor: 'transparent' }]}>
+              <View style={styles.badgesGroup}>
+                <View style={[styles.voicingBadge, { backgroundColor: voicingBg }]}>
+                  <Text style={[styles.voicingText, { color: voicingTextColor }]}>
+                    {item.voicing}
+                  </Text>
                 </View>
-              )}
+                <View style={[styles.seasonBadge, { backgroundColor: theme.surfaceSubtle }]}>
+                  <Text style={[styles.seasonText, { color: theme.subtext }]}>{item.season}</Text>
+                </View>
+                {item.genre && (
+                  <View style={[styles.genreBadge, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}>
+                    <Text style={[styles.genreText, { color: theme.tint }]}>{item.genre}</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.statusGroup}>
+                {item.downloadStatus === 'completed' ? (
+                  <View style={styles.downloadedPill}>
+                    <Ionicons name="checkmark-circle" size={14} color={Colors.status.completed} />
+                    <Text style={styles.downloadedPillText}>Offline</Text>
+                  </View>
+                ) : item.downloadStatus === 'downloading' ? (
+                  <ActivityIndicator size="small" color={theme.tint} />
+                ) : (
+                  <Ionicons name="cloud-outline" size={16} color={theme.subtext} />
+                )}
+              </View>
             </View>
 
-            <View style={styles.statusGroup}>
-              {item.downloadStatus === 'completed' ? (
-                <View style={styles.downloadedPill}>
-                  <Ionicons name="checkmark-circle" size={14} color={Colors.status.completed} />
-                  <Text style={styles.downloadedPillText}>Offline</Text>
+            {/* Title and Composer */}
+            <Text style={[styles.scoreTitle, { color: theme.text }]} numberOfLines={2}>
+              {item.title}
+            </Text>
+            <Text style={[styles.scoreComposer, { color: theme.subtext }]}>
+              {item.composer}
+              {item.arranger ? ` • arr. ${item.arranger}` : ''}
+            </Text>
+
+            {/* Bottom details (Key, Pages, Duration) */}
+            <View style={[styles.footerRow, { backgroundColor: 'transparent' }]}>
+              <View style={styles.footerDetail}>
+                <Ionicons name="document-text-outline" size={13} color={theme.subtext} />
+                <Text style={[styles.footerText, { color: theme.subtext }]}>
+                  {item.pageCount} pages
+                </Text>
+              </View>
+
+              {item.keySignature && (
+                <View style={styles.footerDetail}>
+                  <Ionicons name="musical-note-outline" size={13} color={theme.subtext} />
+                  <Text style={[styles.footerText, { color: theme.subtext }]}>
+                    {item.keySignature}
+                  </Text>
                 </View>
-              ) : item.downloadStatus === 'downloading' ? (
-                <ActivityIndicator size="small" color={theme.tint} />
-              ) : (
-                <Ionicons name="cloud-outline" size={16} color={theme.subtext} />
               )}
 
-              <TouchableOpacity
-                onPress={() => toggleFavorite(item.id)}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                style={styles.starButton}>
-                <Ionicons
-                  name={item.isFavorite ? 'star' : 'star-outline'}
-                  size={20}
-                  color={item.isFavorite ? '#F59E0B' : theme.subtext}
-                />
-              </TouchableOpacity>
+              {item.duration && (
+                <View style={styles.footerDetail}>
+                  <Ionicons name="time-outline" size={13} color={theme.subtext} />
+                  <Text style={[styles.footerText, { color: theme.subtext }]}>{item.duration}</Text>
+                </View>
+              )}
             </View>
           </View>
 
-          {/* Title and Composer */}
-          <Text style={[styles.scoreTitle, { color: theme.text }]} numberOfLines={2}>
-            {item.title}
-          </Text>
-          <Text style={[styles.scoreComposer, { color: theme.subtext }]}>
-            {item.composer}
-            {item.arranger ? ` • arr. ${item.arranger}` : ''}
-          </Text>
+          {/* Right Actions Column: Favorite on Top, Delete Score Below */}
+          <View style={styles.cardActionsColumn}>
+            <TouchableOpacity
+              onPress={() => toggleFavorite(item.id)}
+              hitSlop={{ top: 8, bottom: 6, left: 8, right: 8 }}
+              style={styles.actionIconButton}
+              accessibilityLabel={item.isFavorite ? 'Remove from favorites' : 'Add to favorites'}>
+              <Ionicons
+                name={item.isFavorite ? 'star' : 'star-outline'}
+                size={22}
+                color={item.isFavorite ? '#F59E0B' : theme.subtext}
+              />
+            </TouchableOpacity>
 
-          {/* Bottom details (Key, Pages, Duration) */}
-          <View style={[styles.footerRow, { backgroundColor: 'transparent' }]}>
-            <View style={styles.footerDetail}>
-              <Ionicons name="document-text-outline" size={13} color={theme.subtext} />
-              <Text style={[styles.footerText, { color: theme.subtext }]}>
-                {item.pageCount} pages
-              </Text>
-            </View>
-
-            {item.keySignature && (
-              <View style={styles.footerDetail}>
-                <Ionicons name="musical-note-outline" size={13} color={theme.subtext} />
-                <Text style={[styles.footerText, { color: theme.subtext }]}>
-                  {item.keySignature}
-                </Text>
-              </View>
-            )}
-
-            {item.duration && (
-              <View style={styles.footerDetail}>
-                <Ionicons name="time-outline" size={13} color={theme.subtext} />
-                <Text style={[styles.footerText, { color: theme.subtext }]}>{item.duration}</Text>
-              </View>
+            {userRole === 'admin' && (
+              <TouchableOpacity
+                onPress={() => handleDeleteScore(item)}
+                hitSlop={{ top: 6, bottom: 8, left: 8, right: 8 }}
+                style={[styles.actionIconButton, styles.deleteActionBtn]}
+                accessibilityLabel={`Delete score ${item.title}`}>
+                <Ionicons name="trash-outline" size={17} color="#EF4444" />
+              </TouchableOpacity>
             )}
           </View>
         </View>
@@ -725,6 +777,30 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.04,
     shadowRadius: 6,
     elevation: 1,
+  },
+  scoreCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    gap: 10,
+  },
+  cardActionsColumn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingLeft: 8,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: 'rgba(150, 150, 150, 0.25)',
+    backgroundColor: 'transparent',
+  },
+  actionIconButton: {
+    padding: 6,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteActionBtn: {
+    backgroundColor: '#EF444415',
   },
   scoreCardContent: {},
   metaRow: {

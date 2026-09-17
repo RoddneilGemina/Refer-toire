@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { PdfViewerProps } from './PdfViewer.types';
 import { ChoralPdfService } from '@/services/choralPdfService';
+import { PDF_JS_CODE, PDF_WORKER_CODE } from '@/services/pdfEngineBundle';
 import * as FileSystem from 'expo-file-system/legacy';
 
 // On Web, require PdfViewerWeb dynamically
@@ -134,7 +135,6 @@ export default function PdfViewer(props: PdfViewerProps) {
               }
             };
             reader.onerror = () => {
-              // Pass direct URI if blob conversion fails
               if (isMounted) {
                 setPdfDataUri(uri);
                 setLoading(false);
@@ -182,6 +182,7 @@ export default function PdfViewer(props: PdfViewerProps) {
       stageMode,
       sepiaMode,
       zoomScale,
+      viewMode,
       page: initialPage,
     });
     webViewRef.current.injectJavaScript(`
@@ -190,7 +191,7 @@ export default function PdfViewer(props: PdfViewerProps) {
       }
       true;
     `);
-  }, [stageMode, sepiaMode, zoomScale, initialPage, pdfLoaded]);
+  }, [stageMode, sepiaMode, zoomScale, viewMode, initialPage, pdfLoaded]);
 
   // Handle messages sent from the WebView (page changes, load events, tap zones)
   const handleWebViewMessage = useCallback((event: any) => {
@@ -228,7 +229,7 @@ export default function PdfViewer(props: PdfViewerProps) {
     );
   }
 
-  // Self-contained offline HTML5 PDF.js / Choral Canvas Reader
+  // Self-contained 100% offline HTML5 PDF.js / Choral Canvas Reader
   const htmlContent = `
 <!DOCTYPE html>
 <html>
@@ -240,7 +241,8 @@ export default function PdfViewer(props: PdfViewerProps) {
     html, body {
       width: 100%;
       height: 100%;
-      overflow: hidden;
+      margin: 0;
+      padding: 0;
       background-color: ${stageMode ? '#05070A' : sepiaMode ? '#FAF5EA' : '#FFFFFF'};
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       transition: background-color 0.25s ease;
@@ -249,30 +251,52 @@ export default function PdfViewer(props: PdfViewerProps) {
     #viewport {
       width: 100%;
       height: 100%;
+      position: relative;
+      overflow-x: hidden;
+      overflow-y: ${viewMode === 'scroll' ? 'auto' : 'hidden'};
+      -webkit-overflow-scrolling: touch;
       display: flex;
+      flex-direction: column;
       align-items: center;
-      justify-content: center;
-      position: relative;
-      overflow: auto;
     }
-    #canvas-container {
+    #pages-container {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: ${viewMode === 'scroll' ? '16px 0 60px 0' : '0'};
+      transition: filter 0.25s ease;
+    }
+    .page-wrapper {
       position: relative;
-      display: inline-block;
-      margin: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: ${viewMode === 'scroll' ? '0 auto 24px auto' : 'auto'};
       box-shadow: ${stageMode ? '0 8px 32px rgba(0,0,0,0.8)' : '0 4px 20px rgba(0,0,0,0.15)'};
       border-radius: 8px;
       overflow: hidden;
-      transition: transform 0.2s ease, filter 0.25s ease;
-      transform-origin: center center;
+      background-color: #FFFFFF;
+      transition: transform 0.2s ease;
     }
     canvas {
       display: block;
       width: 100%;
       height: auto;
     }
-    /* Touch Navigation Zones */
+    .page-tag {
+      width: 100%;
+      text-align: center;
+      padding: 6px 0;
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748B;
+      background-color: #F8FAFC;
+      border-top: 1px solid #E2E8F0;
+    }
+    /* Touch Navigation Zones (Single Page Mode) */
     .touch-zone {
-      position: absolute;
+      position: fixed;
       top: 0;
       height: 100%;
       z-index: 100;
@@ -292,7 +316,7 @@ export default function PdfViewer(props: PdfViewerProps) {
     }
 
     #loading-indicator {
-      position: absolute;
+      position: fixed;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
@@ -301,18 +325,30 @@ export default function PdfViewer(props: PdfViewerProps) {
       font-size: 14px;
       text-align: center;
       z-index: 50;
+      background: rgba(0,0,0,0.08);
+      padding: 12px 22px;
+      border-radius: 20px;
+      pointer-events: none;
     }
   </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    ${PDF_JS_CODE}
+  </script>
+  <script>
+    try {
+      const workerBlob = new Blob([${JSON.stringify(PDF_WORKER_CODE)}], { type: 'application/javascript' });
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
+    } catch (e) {
+      console.warn('PDF.js worker blob initialization error:', e);
+    }
+  </script>
 </head>
 <body>
   <div id="viewport">
-    <div id="loading-indicator">Rendering Sheet Music...</div>
-    <div id="canvas-container">
-      <canvas id="pdf-canvas"></canvas>
-    </div>
+    <div id="loading-indicator">Opening Sheet Music...</div>
+    <div id="pages-container"></div>
 
-    <!-- Touch Navigation Zones -->
+    <!-- Touch Navigation Zones (Single Page Mode) -->
     <div id="zone-left" class="touch-zone" onclick="prevPage()"></div>
     <div id="zone-center" class="touch-zone" onclick="toggleControls()"></div>
     <div id="zone-right" class="touch-zone" onclick="nextPage()"></div>
@@ -323,13 +359,11 @@ export default function PdfViewer(props: PdfViewerProps) {
     let pageNum = ${initialPage};
     let totalPages = 1;
     let currentZoom = ${zoomScale};
-    let isRendering = false;
-    let pendingPage = null;
-
-    const canvas = document.getElementById('pdf-canvas');
-    const ctx = canvas.getContext('2d');
-    const container = document.getElementById('canvas-container');
-    const loader = document.getElementById('loading-indicator');
+    let currentViewMode = '${viewMode}';
+    let isStage = ${stageMode};
+    let isSepia = ${sepiaMode};
+    let pageWrappers = {};
+    let scrollTimeout = null;
 
     function sendRN(msg) {
       if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
@@ -337,103 +371,243 @@ export default function PdfViewer(props: PdfViewerProps) {
       }
     }
 
-    function applyFilters(stage, sepia, zoom) {
-      container.className = stage ? 'stage-mode' : (sepia ? 'sepia-mode' : '');
-      document.body.style.backgroundColor = stage ? '#05070A' : (sepia ? '#FAF5EA' : '#FFFFFF');
-      container.style.transform = 'scale(' + zoom + ')';
+    function applyVisualFilters() {
+      const container = document.getElementById('pages-container');
+      if (!container) return;
+      container.className = isStage ? 'stage-mode' : (isSepia ? 'sepia-mode' : '');
+      document.body.style.backgroundColor = isStage ? '#05070A' : (isSepia ? '#FAF5EA' : '#FFFFFF');
     }
 
-    applyFilters(${stageMode}, ${sepiaMode}, ${zoomScale});
+    async function renderPageCanvas(num) {
+      const item = pageWrappers[num];
+      if (!item || !pdfDoc || item.rendered) return;
 
-    async function renderPage(num) {
-      isRendering = true;
       try {
-        if (!pdfDoc) return;
         const page = await pdfDoc.getPage(num);
         const viewportWidth = window.innerWidth * 0.95;
         const unscaledViewport = page.getViewport({ scale: 1.0 });
-        const scale = (viewportWidth / unscaledViewport.width);
+        let baseScale = (viewportWidth / unscaledViewport.width);
+        baseScale = Math.min(Math.max(baseScale, 0.7), 2.5);
+        const finalScale = baseScale * currentZoom;
         const dpr = window.devicePixelRatio || 1;
-        const viewport = page.getViewport({ scale: scale * dpr });
+        const viewport = page.getViewport({ scale: finalScale * dpr });
 
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        canvas.style.width = Math.floor(viewport.width / dpr) + 'px';
-        canvas.style.height = Math.floor(viewport.height / dpr) + 'px';
+        item.canvas.width = viewport.width;
+        item.canvas.height = viewport.height;
+        item.canvas.style.width = Math.floor(viewport.width / dpr) + 'px';
+        item.canvas.style.height = Math.floor(viewport.height / dpr) + 'px';
 
-        const renderContext = {
-          canvasContext: ctx,
+        await page.render({
+          canvasContext: item.ctx,
           viewport: viewport
-        };
+        }).promise;
 
-        await page.render(renderContext).promise;
-        isRendering = false;
-
-        if (loader) loader.style.display = 'none';
-
-        if (pendingPage !== null) {
-          const next = pendingPage;
-          pendingPage = null;
-          renderPage(next);
-        } else {
-          sendRN({ type: 'pageChange', page: num, totalPages: totalPages });
-        }
+        item.rendered = true;
       } catch (err) {
-        isRendering = false;
-        console.warn('Render error:', err);
+        console.warn('Preload page error ' + num, err);
       }
     }
 
-    function queueRenderPage(num) {
-      if (isRendering) {
-        pendingPage = num;
+    function updateLayout() {
+      const viewport = document.getElementById('viewport');
+      const container = document.getElementById('pages-container');
+      const zones = document.querySelectorAll('.touch-zone');
+
+      if (currentViewMode === 'scroll') {
+        viewport.style.overflowY = 'auto';
+        viewport.style.overflowX = 'hidden';
+        container.style.padding = '16px 0 60px 0';
+        zones.forEach(z => z.style.display = 'none');
+
+        for (let p = 1; p <= totalPages; p++) {
+          if (pageWrappers[p]) {
+            pageWrappers[p].wrapper.style.display = 'flex';
+            pageWrappers[p].wrapper.style.margin = '0 auto 24px auto';
+            if (pageWrappers[p].tag) pageWrappers[p].tag.style.display = 'block';
+          }
+        }
       } else {
-        renderPage(num);
+        viewport.style.overflowY = 'hidden';
+        viewport.style.overflowX = 'hidden';
+        viewport.scrollTop = 0;
+        container.style.padding = '0';
+        zones.forEach(z => z.style.display = 'block');
+
+        for (let p = 1; p <= totalPages; p++) {
+          if (pageWrappers[p]) {
+            pageWrappers[p].wrapper.style.display = (p === pageNum) ? 'flex' : 'none';
+            pageWrappers[p].wrapper.style.margin = 'auto';
+            if (pageWrappers[p].tag) pageWrappers[p].tag.style.display = 'none';
+          }
+        }
       }
+
+      applyVisualFilters();
+    }
+
+    async function preloadAllPages() {
+      const container = document.getElementById('pages-container');
+      container.innerHTML = '';
+      pageWrappers = {};
+
+      for (let p = 1; p <= totalPages; p++) {
+        const wrapper = document.createElement('div');
+        wrapper.id = 'page-wrapper-' + p;
+        wrapper.className = 'page-wrapper';
+
+        const canvas = document.createElement('canvas');
+        canvas.id = 'canvas-' + p;
+        wrapper.appendChild(canvas);
+
+        const tag = document.createElement('div');
+        tag.className = 'page-tag';
+        tag.innerText = 'Page ' + p + ' of ' + totalPages;
+        wrapper.appendChild(tag);
+
+        container.appendChild(wrapper);
+
+        pageWrappers[p] = {
+          wrapper: wrapper,
+          canvas: canvas,
+          ctx: canvas.getContext('2d'),
+          tag: tag,
+          rendered: false,
+        };
+      }
+
+      updateLayout();
+
+      // Priority render active page so sheet music is instantly readable
+      await renderPageCanvas(pageNum);
+      const loader = document.getElementById('loading-indicator');
+      if (loader) loader.style.display = 'none';
+
+      // Background pre-rendering of all remaining pages for 0ms instantaneous page switching
+      for (let p = 1; p <= totalPages; p++) {
+        if (p !== pageNum) {
+          await renderPageCanvas(p);
+        }
+      }
+    }
+
+    function goToPage(n) {
+      if (n < 1 || n > totalPages) return;
+      pageNum = n;
+      if (currentViewMode === 'scroll') {
+        if (pageWrappers[pageNum]) {
+          pageWrappers[pageNum].wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      } else {
+        updateLayout();
+      }
+      sendRN({ type: 'pageChange', page: pageNum, totalPages: totalPages });
     }
 
     function prevPage() {
+      if (currentViewMode === 'scroll') return;
       if (pageNum <= 1) return;
-      pageNum--;
-      queueRenderPage(pageNum);
+      goToPage(pageNum - 1);
     }
 
     function nextPage() {
+      if (currentViewMode === 'scroll') return;
       if (pageNum >= totalPages) return;
-      pageNum++;
-      queueRenderPage(pageNum);
+      goToPage(pageNum + 1);
     }
 
     function toggleControls() {
       sendRN({ type: 'toggleControls' });
     }
 
+    // Scroll position observer to update page indicator during manual scrolling
+    const viewportElem = document.getElementById('viewport');
+    viewportElem.addEventListener('scroll', function() {
+      if (currentViewMode !== 'scroll') return;
+      if (scrollTimeout) clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(function() {
+        const vTop = viewportElem.scrollTop;
+        const vMid = vTop + (viewportElem.clientHeight / 2);
+        let closestPage = pageNum;
+        let minDiff = Infinity;
+
+        for (let p = 1; p <= totalPages; p++) {
+          const item = pageWrappers[p];
+          if (item && item.wrapper) {
+            const top = item.wrapper.offsetTop;
+            const center = top + (item.wrapper.offsetHeight / 2);
+            const diff = Math.abs(vMid - center);
+            if (diff < minDiff) {
+              minDiff = diff;
+              closestPage = p;
+            }
+          }
+        }
+
+        if (closestPage !== pageNum) {
+          pageNum = closestPage;
+          sendRN({ type: 'pageChange', page: pageNum, totalPages: totalPages });
+        }
+      }, 60);
+    }, { passive: true });
+
     window.handleAppMessage = function(data) {
       if (data.type === 'updateProps') {
-        applyFilters(data.stageMode, data.sepiaMode, data.zoomScale);
+        if (data.stageMode !== undefined) isStage = data.stageMode;
+        if (data.sepiaMode !== undefined) isSepia = data.sepiaMode;
+        if (data.zoomScale !== undefined && Math.abs(data.zoomScale - currentZoom) > 0.05) {
+          currentZoom = data.zoomScale;
+          for (let p = 1; p <= totalPages; p++) {
+            if (pageWrappers[p]) pageWrappers[p].rendered = false;
+          }
+          renderPageCanvas(pageNum);
+          for (let p = 1; p <= totalPages; p++) {
+            if (p !== pageNum) renderPageCanvas(p);
+          }
+        }
+        if (data.viewMode !== undefined && data.viewMode !== currentViewMode) {
+          currentViewMode = data.viewMode;
+          updateLayout();
+          if (currentViewMode === 'scroll' && pageWrappers[pageNum]) {
+            pageWrappers[pageNum].wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        }
         if (data.page && data.page !== pageNum && data.page >= 1 && data.page <= totalPages) {
           pageNum = data.page;
-          queueRenderPage(pageNum);
+          if (currentViewMode === 'scroll' && pageWrappers[pageNum]) {
+            pageWrappers[pageNum].wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          } else {
+            updateLayout();
+          }
         }
+        applyVisualFilters();
       }
     };
 
-    // Offline Choral Score Canvas Fallback Renderer (if PDF.js CDN is unreachable)
+    // Offline Choral Score Canvas Fallback Renderer (if data is corrupted)
     function renderOfflineChoralScoreFallback() {
+      const loader = document.getElementById('loading-indicator');
       if (loader) loader.style.display = 'none';
+      const container = document.getElementById('pages-container');
+      container.innerHTML = '';
       const dpr = window.devicePixelRatio || 1;
       const w = Math.min(window.innerWidth * 0.94, 600);
       const h = w * 1.35;
-      canvas.width = w * dpr;
-      canvas.height = h * dpr;
-      canvas.style.width = w + 'px';
-      canvas.style.height = h + 'px';
 
+      const wrap = document.createElement('div');
+      wrap.className = 'page-wrapper';
+      const cvs = document.createElement('canvas');
+      cvs.width = w * dpr;
+      cvs.height = h * dpr;
+      cvs.style.width = w + 'px';
+      cvs.style.height = h + 'px';
+      wrap.appendChild(cvs);
+      container.appendChild(wrap);
+
+      const ctx = cvs.getContext('2d');
       ctx.scale(dpr, dpr);
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, w, h);
 
-      // Header
       ctx.fillStyle = '#0D74CE';
       ctx.font = 'bold 16px sans-serif';
       ctx.fillText("${title}", 30, 45);
@@ -442,7 +616,6 @@ export default function PdfViewer(props: PdfViewerProps) {
       ctx.font = '12px sans-serif';
       ctx.fillText("${composer}  •  ${voicing}", 30, 68);
 
-      // Divider
       ctx.strokeStyle = '#CBD5E1';
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -450,7 +623,6 @@ export default function PdfViewer(props: PdfViewerProps) {
       ctx.lineTo(w - 30, 80);
       ctx.stroke();
 
-      // 4 Staves
       const staffTops = [130, 240, 350, 460];
       staffTops.forEach((top, sIdx) => {
         ctx.strokeStyle = '#1E293B';
@@ -461,12 +633,10 @@ export default function PdfViewer(props: PdfViewerProps) {
           ctx.lineTo(w - 30, top + i * 8);
           ctx.stroke();
         }
-        // Clef indicator
         ctx.fillStyle = '#0F172A';
         ctx.font = 'bold 14px serif';
         ctx.fillText(sIdx % 2 === 0 ? '𝄞' : '𝄢', 35, top + 24);
 
-        // Sample notes
         for (let n = 0; n < 6; n++) {
           const nx = 80 + n * (w - 140) / 6;
           const ny = top + 16 - (n % 4) * 4;
@@ -478,33 +648,19 @@ export default function PdfViewer(props: PdfViewerProps) {
           ctx.lineTo(nx + 3, ny - 16);
           ctx.stroke();
         }
-
-        // Lyrics
-        ctx.fillStyle = '#334155';
-        ctx.font = 'italic 10px serif';
-        ctx.fillText(sIdx % 2 === 0 ? 'A - ve   ve - rum   cor - pus' : 'na - tum   de   Ma - ri - a', 70, top + 46);
       });
 
-      // Footer
-      ctx.fillStyle = '#64748B';
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('- Page ' + pageNum + ' of 3 -', w / 2, h - 20);
-
-      totalPages = 3;
-      sendRN({ type: 'loaded', totalPages: 3 });
+      totalPages = 1;
+      sendRN({ type: 'loaded', totalPages: 1 });
     }
 
-    // Initialize document loader
+    // Initialize PDF Document
     async function initPdf() {
       const rawData = "${pdfDataUri}";
       if (!rawData) return;
 
       try {
         if (window.pdfjsLib) {
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
           let loadingTask;
           if (rawData.startsWith('data:application/pdf;base64,')) {
             const b64 = rawData.replace('data:application/pdf;base64,', '');
@@ -521,9 +677,8 @@ export default function PdfViewer(props: PdfViewerProps) {
           pdfDoc = await loadingTask.promise;
           totalPages = pdfDoc.numPages || 1;
           sendRN({ type: 'loaded', totalPages: totalPages });
-          renderPage(pageNum);
+          await preloadAllPages();
         } else {
-          // PDF.js CDN unavailable (e.g. offline airplane mode) -> use instant native choral canvas
           renderOfflineChoralScoreFallback();
         }
       } catch (err) {
@@ -561,6 +716,9 @@ export default function PdfViewer(props: PdfViewerProps) {
           javaScriptEnabled={true}
           domStorageEnabled={true}
           scalesPageToFit={true}
+          scrollEnabled={true}
+          bounces={false}
+          overScrollMode="never"
           allowFileAccess={true}
           allowFileAccessFromFileURLs={true}
           allowUniversalAccessFromFileURLs={true}

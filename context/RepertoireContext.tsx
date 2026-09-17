@@ -194,6 +194,22 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
               }
             });
           }
+        } else if (user) {
+          // If no local active ensemble is set, discover ensembles belonging to this user in the cloud
+          try {
+            const userEnsembles = await DatabaseService.getUserEnsembles(user.id);
+            if (userEnsembles.length > 0) {
+              const firstInst = userEnsembles[0];
+              await StorageService.setActiveInstanceCode(firstInst.code);
+              const role = await StorageService.getUserRole(firstInst.code);
+              setUserRole(role);
+              setCurrentInstance(firstInst);
+              StorageService.saveCachedInstance(firstInst);
+              syncScoresForInstance(firstInst);
+            }
+          } catch (e) {
+            console.warn('Cross-device ensemble discovery notice:', e);
+          }
         }
       } catch (err) {
         console.warn('Init session error:', err);
@@ -247,6 +263,21 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
       setCurrentUser(res.user);
       if (res.user.voicePart) {
         setPreferredVoicePartState(res.user.voicePart);
+      }
+      // Discover and auto-load ensembles this account belongs to across devices
+      try {
+        const userEnsembles = await DatabaseService.getUserEnsembles(res.user.id);
+        if (userEnsembles.length > 0 && !currentInstance) {
+          const firstInst = userEnsembles[0];
+          await StorageService.setActiveInstanceCode(firstInst.code);
+          const role = await StorageService.getUserRole(firstInst.code);
+          setUserRole(role);
+          setCurrentInstance(firstInst);
+          StorageService.saveCachedInstance(firstInst);
+          syncScoresForInstance(firstInst);
+        }
+      } catch (e) {
+        console.warn('Cross-device ensemble discovery notice on sign in:', e);
       }
     }
     return res;
@@ -431,6 +462,12 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
     }
     if (userRole !== 'admin') {
       return { success: false, error: 'Permission denied. Only admins can upload scores.' };
+    }
+    if (isOfflineMode || !NetworkService.isOnline()) {
+      return {
+        success: false,
+        error: 'Cannot upload sheet music while in offline mode. Please switch to online mode and verify internet connectivity.',
+      };
     }
 
     try {

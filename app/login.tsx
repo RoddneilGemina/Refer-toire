@@ -22,17 +22,6 @@ import { DatabaseService } from '@/services/databaseService';
 type AuthMode = 'signin' | 'signup';
 type EnsembleMode = 'join' | 'create';
 
-const VOICE_OPTIONS = [
-  'Soprano 1',
-  'Soprano 2',
-  'Alto 1',
-  'Alto 2',
-  'Tenor 1',
-  'Tenor 2',
-  'Baritone',
-  'Bass',
-];
-
 export default function LoginScreen() {
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme];
@@ -44,7 +33,6 @@ export default function LoginScreen() {
     signOutUser,
     signInWithCode,
     createGroup,
-    purgeCleanSlate,
   } = useRepertoire();
 
   // Auth Form State
@@ -52,7 +40,6 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [voicePart, setVoicePart] = useState('Tenor 1');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
@@ -88,7 +75,6 @@ export default function LoginScreen() {
       fullName: fullName.trim(),
       email: email.trim(),
       password,
-      voicePart,
     });
 
     setAuthLoading(false);
@@ -187,27 +173,17 @@ export default function LoginScreen() {
     }
   };
 
-  const handleCleanSlatePurge = async () => {
-    if (Platform.OS === 'web') {
-      const confirmPurge = window.confirm(
-        'Are you sure you want to purge all test ensembles, scores, and offline caches for a completely clean slate?'
-      );
-      if (!confirmPurge) return;
-    }
-    await purgeCleanSlate();
-    setAuthError(null);
-    setEnsembleError(null);
-    Alert.alert('Clean Slate', 'All local and test data has been cleared.');
-  };
-
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
         style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled">
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets={true}>
           {/* Header Branding: HD Logo */}
           <View style={[styles.headerContainer, { backgroundColor: 'transparent' }]}>
             <Image
@@ -340,36 +316,6 @@ export default function LoginScreen() {
                     secureTextEntry
                   />
 
-                  <Text style={[styles.inputLabel, { color: theme.text }]}>Primary Voice Section</Text>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.chipsScroll}>
-                    {VOICE_OPTIONS.map(v => {
-                      const isSel = voicePart === v;
-                      return (
-                        <TouchableOpacity
-                          key={v}
-                          style={[
-                            styles.chip,
-                            {
-                              backgroundColor: isSel ? theme.tint : theme.surfaceSubtle,
-                              borderColor: isSel ? theme.tint : theme.border,
-                            },
-                          ]}
-                          onPress={() => setVoicePart(v)}>
-                          <Text
-                            style={[
-                              styles.chipText,
-                              { color: isSel ? '#FFFFFF' : theme.text, fontWeight: isSel ? '700' : '500' },
-                            ]}>
-                            {v}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-
                   <TouchableOpacity
                     style={[styles.submitButton, { backgroundColor: theme.tint }]}
                     onPress={handleSignUp}
@@ -455,7 +401,7 @@ export default function LoginScreen() {
                 <View style={{ flex: 1, backgroundColor: 'transparent' }}>
                   <Text style={[styles.profileName, { color: theme.text }]}>{currentUser.fullName}</Text>
                   <Text style={[styles.profileEmail, { color: theme.subtext }]}>
-                    {currentUser.email} • <Text style={{ color: theme.tint, fontWeight: '600' }}>{currentUser.voicePart || 'General'}</Text>
+                    {currentUser.email}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -694,17 +640,8 @@ export default function LoginScreen() {
             </View>
           )}
 
-          {/* Clean Slate Purge Footer */}
-          <View style={[styles.footerContainer, { backgroundColor: 'transparent' }]}>
-            <TouchableOpacity
-              style={styles.cleanSlateBtn}
-              onPress={handleCleanSlatePurge}>
-              <Ionicons name="trash-outline" size={14} color={theme.subtext} style={{ marginRight: 4 }} />
-              <Text style={[styles.cleanSlateText, { color: theme.subtext }]}>
-                Clean Slate: Purge All Test Ensembles & Cache
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {/* Keyboard Buffer Spacer */}
+          <View style={styles.keyboardBuffer} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -716,9 +653,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
     paddingHorizontal: 20,
-    paddingTop: 32,
-    paddingBottom: 48,
+    paddingTop: 24,
+    paddingBottom: 60,
     maxWidth: 540,
     width: '100%',
     alignSelf: 'center',
@@ -934,17 +873,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  footerContainer: {
-    alignItems: 'center',
-    marginTop: 28,
-  },
-  cleanSlateBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 8,
-  },
-  cleanSlateText: {
-    fontSize: 11,
-    textDecorationLine: 'underline',
+  keyboardBuffer: {
+    height: 40,
   },
 });
