@@ -81,6 +81,21 @@ export class DatabaseService {
 
     // 1. Persist to Supabase instances table
     try {
+      // Ensure creator profile is synced in public.profiles first
+      if (currentUser?.id && NetworkService.isOnline()) {
+        try {
+          await supabase.from('profiles').upsert({
+            id: currentUser.id,
+            email: currentUser.email,
+            full_name: currentUser.fullName,
+            voice_part: currentUser.voicePart || 'General',
+            updated_at: new Date().toISOString(),
+          });
+        } catch (pErr) {
+          console.warn('[Supabase Cloud] Profile sync before createGroup notice:', pErr);
+        }
+      }
+
       const fullPayload: any = {
         code: finalCode,
         name: newInstance.name,
@@ -122,7 +137,7 @@ export class DatabaseService {
       }
 
       // Automatically register creator in ensemble_members table as ADMIN if available
-      if (currentUser?.id) {
+      if (currentUser?.id && NetworkService.isOnline()) {
         try {
           const { error: memberErr } = await supabase.from('ensemble_members').upsert({
             instance_code: finalCode,
@@ -398,14 +413,30 @@ export class DatabaseService {
     if (currentUser?.id) {
       try {
         const isOffline = await StorageService.getOfflineMode();
-        if (!isOffline) {
-          await supabase.from('ensemble_members').upsert({
+        if (!isOffline && NetworkService.isOnline()) {
+          // Ensure profile is synced to public.profiles first
+          try {
+            await supabase.from('profiles').upsert({
+              id: currentUser.id,
+              email: currentUser.email,
+              full_name: currentUser.fullName,
+              voice_part: currentUser.voicePart || 'General',
+              updated_at: new Date().toISOString(),
+            });
+          } catch (pErr) {
+            console.warn('[Supabase Cloud] Profile sync before join notice:', pErr);
+          }
+
+          const { error: memberErr } = await supabase.from('ensemble_members').upsert({
             instance_code: code,
             user_id: currentUser.id,
             role: role,
             voice_part: currentUser.voicePart || 'General',
             joined_at: new Date().toISOString(),
           });
+          if (memberErr) {
+            console.warn('[Supabase Cloud] Member join insert notice:', memberErr.message);
+          }
         }
       } catch (err) {
         console.warn('Could not record ensemble member in Supabase:', err);
@@ -459,38 +490,34 @@ export class DatabaseService {
 
     // 1. Try Supabase cloud query if not offline
     const isOffline = await StorageService.getOfflineMode();
-    if (!isOffline) {
+    if (!isOffline && NetworkService.isOnline()) {
       try {
-        const { data: rows, error } = await supabase
+        const { data: memberRows, error: memberErr } = await supabase
           .from('ensemble_members')
-          .select(`
-            id,
-            instance_code,
-            user_id,
-            role,
-            voice_part,
-            joined_at,
-            profiles:user_id (
-              id,
-              email,
-              full_name,
-              voice_part
-            )
-          `)
+          .select('id, instance_code, user_id, role, voice_part, joined_at')
           .eq('instance_code', code);
 
-        if (!error && rows && rows.length > 0) {
-          const members: EnsembleMember[] = rows.map((r: any) => {
+        if (!memberErr && memberRows && memberRows.length > 0) {
+          const userIds = Array.from(new Set(memberRows.map((r: any) => r.user_id)));
+          const { data: profileRows } = await supabase
+            .from('profiles')
+            .select('id, email, full_name, voice_part')
+            .in('id', userIds);
+
+          const profileMap = new Map<string, any>((profileRows || []).map((p: any) => [p.id, p]));
+
+          const members: EnsembleMember[] = memberRows.map((r: any) => {
             const isOwner = creatorId ? r.user_id === creatorId : false;
+            const prof = profileMap.get(r.user_id);
             return {
               id: r.id,
               instanceCode: r.instance_code,
               userId: r.user_id,
-              fullName: r.profiles?.full_name || 'Ensemble Singer',
-              email: r.profiles?.email || '',
+              fullName: prof?.full_name || 'Ensemble Singer',
+              email: prof?.email || '',
               role: isOwner ? 'admin' : (r.role === 'admin' ? 'admin' : 'member'),
               isOwner,
-              voicePart: r.voice_part || r.profiles?.voice_part || 'General',
+              voicePart: r.voice_part || prof?.voice_part || 'General',
               joinedAt: r.joined_at,
             };
           });

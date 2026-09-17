@@ -43,6 +43,7 @@ export default function LoginScreen() {
   const [fullName, setFullName] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuccess, setAuthSuccess] = useState<string | null>(null);
 
   // Ensemble Form State
   const [ensembleMode, setEnsembleMode] = useState<EnsembleMode>('join');
@@ -70,6 +71,7 @@ export default function LoginScreen() {
     }
 
     setAuthError(null);
+    setAuthSuccess(null);
     setAuthLoading(true);
 
     const res = await signUp({
@@ -81,8 +83,15 @@ export default function LoginScreen() {
     setAuthLoading(false);
 
     if (res.success) {
-      setDirectorName(fullName.trim());
-      // Stay on screen to join or create ensemble
+      if (res.requiresEmailConfirmation) {
+        setAuthSuccess(
+          res.message || 'Account created in Supabase! Please check your email to verify your account, then sign in below.'
+        );
+        setAuthMode('signin');
+      } else {
+        setDirectorName(fullName.trim());
+        setAuthSuccess(null);
+      }
     } else {
       setAuthError(res.error || 'Failed to create account.');
     }
@@ -96,6 +105,7 @@ export default function LoginScreen() {
     }
 
     setAuthError(null);
+    setAuthSuccess(null);
     setAuthLoading(true);
 
     const res = await signIn({
@@ -211,6 +221,7 @@ export default function LoginScreen() {
                   onPress={() => {
                     setAuthMode('signin');
                     setAuthError(null);
+                    setAuthSuccess(null);
                   }}>
                   <Ionicons
                     name="log-in-outline"
@@ -236,6 +247,7 @@ export default function LoginScreen() {
                   onPress={() => {
                     setAuthMode('signup');
                     setAuthError(null);
+                    setAuthSuccess(null);
                   }}>
                   <Ionicons
                     name="person-add-outline"
@@ -253,6 +265,14 @@ export default function LoginScreen() {
                   </Text>
                 </TouchableOpacity>
               </View>
+
+              {/* Success / Confirmation Message */}
+              {authSuccess && (
+                <View style={[styles.errorBox, { backgroundColor: '#ECFDF5', borderColor: '#34D399' }]}>
+                  <Ionicons name="checkmark-circle" size={18} color="#059669" style={{ marginRight: 8 }} />
+                  <Text style={[styles.errorText, { color: '#065F46' }]}>{authSuccess}</Text>
+                </View>
+              )}
 
               {/* Error Message */}
               {authError && (

@@ -14,7 +14,7 @@ import {
   UserProfile,
   EnsembleMember,
 } from '@/types/repertoire';
-import { AuthService, SignUpParams, SignInParams } from '@/services/authService';
+import { AuthService, SignUpParams, SignInParams, AuthResult } from '@/services/authService';
 import { DatabaseService } from '@/services/databaseService';
 import { DownloadService } from '@/services/downloadService';
 import { StorageService } from '@/services/storageService';
@@ -48,8 +48,8 @@ interface RepertoireContextValue {
   setOfflineMode: (enabled: boolean) => Promise<void>;
   preferredVoicePart: string | null;
   setPreferredVoicePart: (part: string | null) => Promise<void>;
-  signUp: (params: SignUpParams) => Promise<{ success: boolean; user?: UserProfile; error?: string }>;
-  signIn: (params: SignInParams) => Promise<{ success: boolean; user?: UserProfile; error?: string }>;
+  signUp: (params: SignUpParams) => Promise<AuthResult>;
+  signIn: (params: SignInParams) => Promise<AuthResult>;
   signOutUser: () => Promise<void>;
   signInWithCode: (code: string) => Promise<{ success: boolean; error?: string }>;
   createGroup: (params: CreateGroupParams) => Promise<{ success: boolean; code?: string; error?: string }>;
@@ -235,9 +235,9 @@ export function RepertoireProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   // Handle Sign Up
-  const signUp = async (params: SignUpParams) => {
+  const signUp = async (params: SignUpParams): Promise<AuthResult> => {
     const res = await AuthService.signUp(params);
-    if (res.success && res.user) {
+    if (res.success && res.user && !res.requiresEmailConfirmation) {
       setCurrentUser(res.user);
       if (res.user.voicePart) {
         setPreferredVoicePartState(res.user.voicePart);
