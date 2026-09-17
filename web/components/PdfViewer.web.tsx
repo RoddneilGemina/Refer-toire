@@ -59,6 +59,7 @@ export default function PdfViewerWeb({
 }: PdfViewerProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRefs = useRef<Record<number, HTMLCanvasElement>>({});
+  const pageCacheRef = useRef<Map<number, HTMLCanvasElement>>(new Map());
   const renderedPagesRef = useRef<Set<number>>(new Set());
   const renderVersionRef = useRef<number>(0);
   const hasScrolledToInitialRef = useRef<boolean>(false);
@@ -174,6 +175,7 @@ export default function PdfViewerWeb({
         setPdfDoc(doc);
         hasScrolledToInitialRef.current = false;
         renderedScrollDocRef.current = null;
+        pageCacheRef.current.clear();
         const count = doc.numPages || 1;
         setTotalPages(count);
         setPreloadProgress({ current: 0, total: count });
@@ -227,6 +229,7 @@ export default function PdfViewerWeb({
     const currentVersion = renderVersionRef.current;
     let isCancelled = false;
     renderedPagesRef.current.clear();
+    pageCacheRef.current.clear();
 
     // Helper: wait for canvas element to be mounted in DOM
     async function waitForCanvas(p: number, maxWaitMs = 2000): Promise<HTMLCanvasElement | null> {
@@ -271,21 +274,36 @@ export default function PdfViewerWeb({
         const displayWidth = Math.floor(viewport.width / dpr);
         const displayHeight = Math.floor(viewport.height / dpr);
 
+        if (pageNum === 1) {
+          setPageSize({ width: displayWidth, height: displayHeight });
+        }
+
+        // 1. Render to persistent in-memory offscreen canvas buffer
+        let offscreen = pageCacheRef.current.get(pageNum);
+        if (!offscreen) {
+          offscreen = document.createElement('canvas');
+          pageCacheRef.current.set(pageNum, offscreen);
+        }
+        offscreen.width = viewport.width;
+        offscreen.height = viewport.height;
+        const offCtx = offscreen.getContext('2d');
+        if (offCtx) {
+          await page.render({
+            canvasContext: offCtx,
+            viewport: viewport,
+          }).promise;
+        }
+
+        // 2. Set visible canvas dimensions and blit from offscreen cache
         canvas.width = viewport.width;
         canvas.height = viewport.height;
         canvas.style.width = `${displayWidth}px`;
         canvas.style.height = `${displayHeight}px`;
 
-        if (pageNum === 1) {
-          setPageSize({ width: displayWidth, height: displayHeight });
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (offscreen) {
+          ctx.drawImage(offscreen, 0, 0);
         }
-
-        const renderContext = {
-          canvasContext: ctx,
-          viewport: viewport,
-        };
-
-        await page.render(renderContext).promise;
         renderedPagesRef.current.add(pageNum);
       } catch (err: any) {
         console.warn(`Error pre-rendering page ${pageNum}:`, err?.message || err);
@@ -518,6 +536,54 @@ export default function PdfViewerWeb({
     goToPage(currentPageRef.current + 1);
   }, [goToPage]);
 
+  // Synchronously restore all single-page canvases from the in-memory cache
+  const blitAllCachedPagesToSingleCanvases = useCallback(() => {
+    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    for (let p = 1; p <= totalPagesRef.current; p++) {
+      const offscreen = pageCacheRef.current.get(p);
+      const canvas = canvasRefs.current[p];
+      if (offscreen && canvas) {
+        if (canvas.width !== offscreen.width || canvas.height !== offscreen.height) {
+          canvas.width = offscreen.width;
+          canvas.height = offscreen.height;
+          canvas.style.width = `${Math.floor(offscreen.width / dpr)}px`;
+          canvas.style.height = `${Math.floor(offscreen.height / dpr)}px`;
+        }
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(offscreen, 0, 0);
+        }
+      }
+    }
+  }, []);
+
+  // Handle viewMode transitions: reset scrollTop to 0 when entering single page mode and restore canvases
+  useEffect(() => {
+    if (viewMode === 'single') {
+      if (containerRef.current) {
+        containerRef.current.scrollTop = 0;
+      }
+      blitAllCachedPagesToSingleCanvases();
+    } else if (viewMode === 'scroll') {
+      if (scrollContainerRef.current) {
+        const targetPage = currentPageRef.current || 1;
+        if (targetPage > 1) {
+          const targetEl = scrollContainerRef.current.querySelector(
+            `[data-page="${targetPage}"]`
+          ) as HTMLElement;
+          if (targetEl) {
+            isProgrammaticScrollRef.current = true;
+            targetEl.scrollIntoView({ behavior: 'auto', block: 'start' });
+            setTimeout(() => {
+              isProgrammaticScrollRef.current = false;
+            }, 300);
+          }
+        }
+      }
+    }
+  }, [viewMode, blitAllCachedPagesToSingleCanvases]);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
@@ -656,18 +722,22 @@ export default function PdfViewerWeb({
       )}
 
       {/* Single Page Mode: GPU Texture-Preserved Layered Canvas Stack */}
-      {/* ALL pages are already rendered in advance and stay resident in GPU memory */}
-      {/* Page turning is a 0ms instantaneous cut without layout shifts, crossfades, or flickers */}
-      {viewMode === 'single' && !renderError && (
+      {/* ALL pages are pre-rendered into in-memory offscreen buffers and stay resident in DOM */}
+      {/* Page turning and mode switching is an instantaneous 0ms swap without blank screens */}
+      {!renderError && (
         <div
           style={{
-            position: 'relative',
+            position: viewMode === 'single' ? 'relative' : 'absolute',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: '16px 8px 80px',
             maxWidth: '100%',
-            opacity: loading ? 0 : 1,
+            opacity: loading ? 0 : viewMode === 'single' ? 1 : 0,
+            visibility: viewMode === 'single' ? 'visible' : 'hidden',
+            pointerEvents: viewMode === 'single' ? 'auto' : 'none',
+            height: viewMode === 'single' ? 'auto' : 0,
+            overflow: viewMode === 'single' ? 'visible' : 'hidden',
             transition: 'opacity 0.2s ease',
           }}>
           {/* Main Sheet Music Stack Container */}
@@ -837,7 +907,7 @@ export default function PdfViewerWeb({
       )}
 
       {/* Continuous Scroll View */}
-      {viewMode === 'scroll' && !loading && !renderError && (
+      {!loading && !renderError && (
         <div
           ref={scrollContainerRef}
           onClick={(e) => {
@@ -847,7 +917,7 @@ export default function PdfViewerWeb({
             }
           }}
           style={{
-            display: 'flex',
+            display: viewMode === 'scroll' ? 'flex' : 'none',
             flexDirection: 'column',
             alignItems: 'center',
             padding: '16px 8px 80px',

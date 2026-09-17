@@ -21,6 +21,8 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
 import { DatabaseService } from '@/services/databaseService';
+import { supabase } from '@/lib/supabase';
+import { Score } from '@/types/repertoire';
 import PdfViewer from '@/components/PdfViewer';
 import { ViewMode } from '@/components/PdfViewer.types';
 
@@ -31,10 +33,44 @@ export default function ScoreViewerScreen() {
   const { scores, currentInstance, localUris, toggleFavorite, preferredVoicePart, userRole } =
     useRepertoire();
 
-  // Find score from active repertoire or instance manifest
+  const [fetchedScore, setFetchedScore] = useState<Score | null>(null);
+
+  // Find score from active repertoire, instance manifest, or directly fetched
   const score =
     scores.find((s) => s.id === id) ||
-    currentInstance?.scores.find((s) => s.id === id);
+    currentInstance?.scores.find((s) => s.id === id) ||
+    fetchedScore;
+
+  // Direct fetch fallback for direct URLs or page reloads
+  useEffect(() => {
+    if (!score && id) {
+      supabase
+        .from('scores')
+        .select('*')
+        .eq('id', id)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            setFetchedScore({
+              id: data.id,
+              title: data.title,
+              composer: data.composer,
+              voicing: data.voicing,
+              keySignature: data.key_signature,
+              tempo: data.tempo,
+              duration: data.duration,
+              pageCount: data.page_count || 1,
+              sourceUrl: data.source_url,
+              localUri: data.source_url,
+              notes: data.notes,
+              tags: data.tags || [],
+              category: data.category,
+              fileSize: data.file_size || 0,
+            });
+          }
+        });
+    }
+  }, [id, score]);
 
   // Sheet Music Reader States
   const [stageMode, setStageMode] = useState<boolean>(false);
