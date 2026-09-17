@@ -1,4 +1,4 @@
-# 🎶 Refer-toire
+# 🎶 Refertoire
 
 > **Modern Choral Repertoire Manager & Offline Sheet Music Sync Engine**  
 > Built with Expo SDK 57, React Native, Expo Router, Mozilla PDF.js, Supabase, and TypeScript.
