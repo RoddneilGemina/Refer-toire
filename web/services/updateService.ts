@@ -19,8 +19,8 @@ try {
 }
 
 class UpdateServiceManager {
-  private _currentVersion: string = '1.0.0';
-  private _currentBuildNumber: number = 1;
+  private _currentVersion: string = '1.1.0';
+  private _currentBuildNumber: number = 3;
   private _activeDownload: any = null;
   private _simulatedRelease: AppRelease | null = null;
   private _updateListeners: Set<(update: AppRelease) => void> = new Set();
@@ -33,16 +33,32 @@ class UpdateServiceManager {
 
   private initVersionInfo() {
     try {
-      if (Constants.expoConfig?.version) {
-        this._currentVersion = Constants.expoConfig.version;
+      const config: any =
+        Constants.expoConfig ||
+        (Constants as any).manifest ||
+        (Constants as any).manifest2 ||
+        {};
+
+      if (config.version) {
+        this._currentVersion = config.version;
+      } else if (config.extra?.version) {
+        this._currentVersion = config.extra.version;
       }
-      if (Platform.OS === 'android' && Constants.expoConfig?.android?.versionCode) {
-        this._currentBuildNumber = Constants.expoConfig.android.versionCode;
-      } else if (Platform.OS === 'ios' && Constants.expoConfig?.ios?.buildNumber) {
-        this._currentBuildNumber = parseInt(Constants.expoConfig.ios.buildNumber, 10) || 1;
+
+      const candidateBuild =
+        config.android?.versionCode ??
+        (config.ios?.buildNumber ? parseInt(config.ios.buildNumber, 10) : undefined) ??
+        config.extra?.versionCode ??
+        config.extra?.buildNumber;
+
+      if (candidateBuild !== undefined && candidateBuild !== null) {
+        const num = Number(candidateBuild);
+        if (!isNaN(num) && num > 0) {
+          this._currentBuildNumber = num;
+        }
       }
     } catch {
-      // Default to 1.0.0 (Build 1)
+      // Default to 1.1.0 (Build 3)
     }
   }
 
@@ -57,6 +73,7 @@ class UpdateServiceManager {
   /**
    * Semantic and build number version comparator.
    * Returns true if remote is strictly newer than current.
+   * Stops notifying if current build is equal to (or greater than) latest build.
    */
   public isNewer(
     currentVer: string,
@@ -64,13 +81,24 @@ class UpdateServiceManager {
     remoteVer: string,
     remoteBuild: number
   ): boolean {
-    // 1. If remote build number is strictly greater, it's newer
-    if (remoteBuild > currentBuild) return true;
-    if (remoteBuild < currentBuild) return false;
+    const curB = Number(currentBuild) || 0;
+    const remB = Number(remoteBuild) || 0;
 
-    // 2. Otherwise, compare semantic version parts [major, minor, patch]
-    const curParts = currentVer.split('.').map(p => parseInt(p, 10) || 0);
-    const remParts = remoteVer.split('.').map(p => parseInt(p, 10) || 0);
+    // RULE: If current build is equal to or greater than the latest remote build, NEVER notify!
+    if (remB > 0 && curB > 0) {
+      if (curB >= remB) {
+        return false;
+      }
+      return true;
+    }
+
+    // Fallback: semantic version comparison if build numbers are unavailable
+    const curParts = (currentVer || '0').split('.').map(p => parseInt(p, 10) || 0);
+    const remParts = (remoteVer || '0').split('.').map(p => parseInt(p, 10) || 0);
+
+    if (curParts.join('.') === remParts.join('.')) {
+      return false;
+    }
 
     const maxLen = Math.max(curParts.length, remParts.length);
     for (let i = 0; i < maxLen; i++) {
@@ -463,9 +491,12 @@ class UpdateServiceManager {
     };
 
     // Check once upon relaunching the app (debounced 3s so it never blocks UI startup)
+    // Standalone mobile APKs prompt for native updates. Web demo runs directly in browser.
     if (!this._hasCheckedOnLaunch) {
       this._hasCheckedOnLaunch = true;
-      setTimeout(triggerCheck, 3000);
+      if (Platform.OS !== 'web') {
+        setTimeout(triggerCheck, 3000);
+      }
     }
 
     return () => {
