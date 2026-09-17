@@ -41,6 +41,9 @@ jobs:
         run: |
           cp dist/index.html dist/404.html
           touch dist/.nojekyll
+          cp Refertoire.apk dist/Refertoire.apk
+          mkdir -p dist/demoapk
+          cp Refertoire.apk dist/demoapk/Refertoire.apk
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
