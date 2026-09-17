@@ -101,8 +101,8 @@ Refer-toire/
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/RoddneilGemina/Refer-toire.git
-   cd Refer-toire
+   git clone https://github.com/refertoire/refertoire.github.io.git
+   cd refertoire.github.io
    ```
 
 2. **Install dependencies**:

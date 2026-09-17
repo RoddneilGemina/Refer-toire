@@ -157,7 +157,7 @@ class UpdateServiceManager {
       // 2. Query GitHub repository manifest as automatic fallback for git-based updates
       try {
         const ghResp = await fetch(
-          `https://raw.githubusercontent.com/RoddneilGemina/Refer-toire/main/app.json?t=${Date.now()}`,
+          `https://raw.githubusercontent.com/refertoire/refertoire.github.io/main/app.json?t=${Date.now()}`,
           { headers: { 'Cache-Control': 'no-cache' } }
         );
         if (ghResp.ok) {
@@ -171,7 +171,7 @@ class UpdateServiceManager {
               version: ghVersion,
               buildNumber: ghBuild,
               releaseNotes: '• Performance updates, PDF reader enhancements, and bug fixes.',
-              apkUrl: 'https://github.com/RoddneilGemina/Refer-toire/raw/main/Refertoire.apk',
+              apkUrl: 'https://github.com/refertoire/refertoire.github.io/raw/main/Refertoire.apk',
               updateType: 'native_build',
             };
 
@@ -299,7 +299,9 @@ class UpdateServiceManager {
     }
 
     // 3. Handle Standalone Android APK Download & Installation
-    const downloadUrl = release.apkUrl || 'https://github.com/RoddneilGemina/Refer-toire/raw/main/Refertoire.apk';
+    const downloadUrl =
+      release.apkUrl ||
+      'https://github.com/refertoire/refertoire.github.io/raw/main/Refertoire.apk';
 
     try {
       const filename = `Refertoire-v${release.version}-b${release.buildNumber || 1}.apk`;
