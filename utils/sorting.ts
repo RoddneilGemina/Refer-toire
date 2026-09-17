@@ -49,6 +49,13 @@ export function sortScores(scores: ScoreItem[], sortOption: SortOption): ScoreIt
   const cloned = [...scores];
 
   return cloned.sort((a, b) => {
+    // 1. Favorites always pinned to the top of the repertoire list
+    const aFav = Boolean(a.isFavorite);
+    const bFav = Boolean(b.isFavorite);
+    if (aFav && !bFav) return -1;
+    if (!aFav && bFav) return 1;
+
+    // 2. Secondary sort according to selected sort option
     switch (sortOption.field) {
       case 'title': {
         const cmp = a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });

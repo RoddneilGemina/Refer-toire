@@ -13,6 +13,7 @@ import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { Voicing, UploadScoreData, PieceGenre } from '@/types/repertoire';
+import { NetworkService } from '@/services/networkService';
 
 export interface SelectedPdfFile {
   uri: string;
@@ -116,6 +117,11 @@ export default function UploadScoreModal({ file, onClose, onUpload }: UploadScor
   };
 
   const handleSubmit = async () => {
+    if (!NetworkService.isOnline()) {
+      setErrorMessage('You are currently offline. You can only upload scores when connected online. Please check your internet connection.');
+      return;
+    }
+
     if (!title.trim()) {
       setErrorMessage('Please enter the song title.');
       return;

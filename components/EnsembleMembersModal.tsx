@@ -228,13 +228,6 @@ export default function EnsembleMembersModal({
                               {isOwner ? '👑 Owner & Director' : '👑 Admin'}
                             </Text>
                           </View>
-                          {admin.voicePart && (
-                            <View style={[styles.voicePill, { backgroundColor: theme.card }]}>
-                              <Text style={[styles.voicePillText, { color: theme.subtext }]}>
-                                {admin.voicePart}
-                              </Text>
-                            </View>
-                          )}
 
                           {/* Demote Button: Visible to admins for other admins who are not the owner */}
                           {userRole === 'admin' && !isYou && !isOwner && (
@@ -319,14 +312,6 @@ export default function EnsembleMembersModal({
                         </View>
 
                         <View style={{ alignItems: 'flex-end', gap: 6, backgroundColor: 'transparent' }}>
-                          {member.voicePart && (
-                            <View style={[styles.voicePill, { backgroundColor: theme.card }]}>
-                              <Text style={[styles.voicePillText, { color: theme.subtext }]}>
-                                {member.voicePart}
-                              </Text>
-                            </View>
-                          )}
-
                           {/* Promote Button (Visible only to Admins) */}
                           {userRole === 'admin' && !isYou && (
                             <TouchableOpacity
@@ -502,17 +487,6 @@ const styles = StyleSheet.create({
   roleBadgeAdminText: {
     fontSize: 10,
     fontWeight: '700',
-  },
-  voicePill: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(150, 150, 150, 0.2)',
-  },
-  voicePillText: {
-    fontSize: 10,
-    fontWeight: '600',
   },
   promoteBtn: {
     flexDirection: 'row',

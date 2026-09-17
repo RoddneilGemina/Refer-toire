@@ -18,20 +18,11 @@ import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
 import { DownloadService } from '@/services/downloadService';
+import { NetworkService } from '@/services/networkService';
+import { UpdateService } from '@/services/updateService';
 import * as DocumentPicker from 'expo-document-picker';
 import UploadScoreModal, { SelectedPdfFile } from '@/components/UploadScoreModal';
 import EnsembleMembersModal from '@/components/EnsembleMembersModal';
-
-const VOICE_SECTIONS = [
-  { id: 'Soprano 1', label: 'Soprano 1' },
-  { id: 'Soprano 2', label: 'Soprano 2' },
-  { id: 'Alto 1', label: 'Alto 1' },
-  { id: 'Alto 2', label: 'Alto 2' },
-  { id: 'Tenor 1', label: 'Tenor 1' },
-  { id: 'Tenor 2', label: 'Tenor 2' },
-  { id: 'Baritone', label: 'Baritone' },
-  { id: 'Bass', label: 'Bass' },
-];
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme();
@@ -49,8 +40,6 @@ export default function SettingsScreen() {
     clearOfflineCache,
     signOut,
     signOutUser,
-    preferredVoicePart,
-    setPreferredVoicePart,
     uploadScore,
   } = useRepertoire();
 
@@ -58,9 +47,57 @@ export default function SettingsScreen() {
   const [resyncing, setResyncing] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isClearingCache, setIsClearingCache] = useState(false);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<string | null>(null);
   const [pendingUploadFile, setPendingUploadFile] = useState<SelectedPdfFile | null>(null);
 
+  const handleCheckForUpdates = async () => {
+    if (isCheckingUpdate) return;
+    setIsCheckingUpdate(true);
+    setUpdateCheckStatus('Checking for updates...');
+
+    try {
+      const result = await UpdateService.checkForUpdates(true);
+      if (result.available && result.release) {
+        setUpdateCheckStatus(`New build available: v${result.release.version}`);
+        UpdateService.simulateUpdate(result.release);
+      } else {
+        setUpdateCheckStatus('Your app is up to date.');
+        Alert.alert(
+          'Up to Date',
+          `Refertoire v${result.currentVersion} (Build ${result.currentBuildNumber}) is currently the latest version.`
+        );
+      }
+    } catch (err: any) {
+      setUpdateCheckStatus('Update check failed.');
+      Alert.alert('Notice', 'Unable to check for updates right now.');
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
+
+  const handleTestUpdatePopup = () => {
+    UpdateService.simulateUpdate({
+      version: '1.0.1',
+      buildNumber: UpdateService.currentBuildNumber + 1,
+      releaseNotes: '• Automatic update scanner & in-app updater\n• 100% offline local PDF.js engine\n• Instant sheet music preloading\n• Favorite sheet music pinned to top\n• Optimized layout with mobile keyboard buffer',
+      apkUrl: '',
+      fileSize: 42500000,
+      isMandatory: false,
+      publishedAt: new Date().toISOString(),
+      updateType: 'native_build',
+    });
+  };
+
   const handlePickScoreFile = async () => {
+    if (isOfflineMode || !NetworkService.isOnline()) {
+      Alert.alert(
+        'Upload Unavailable',
+        'You can only upload sheet music while in online mode with an active internet connection. Please disable Offline Mode first.'
+      );
+      return;
+    }
+
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: ['application/pdf', 'application/*'],
@@ -293,44 +330,6 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        {/* Singer Voice Part Preference */}
-        <View
-          style={[
-            styles.card,
-            { backgroundColor: theme.card, borderColor: theme.border },
-          ]}>
-          <Text style={[styles.sectionTitle, { color: theme.text }]}>My Voice Section</Text>
-          <Text style={[styles.sectionSub, { color: theme.subtext }]}>
-            Sets your default vocal part for score rehearsals
-          </Text>
-
-          <View style={[styles.voiceChipsContainer, { backgroundColor: 'transparent' }]}>
-            {VOICE_SECTIONS.map(v => {
-              const isSelected = preferredVoicePart === v.id;
-              return (
-                <TouchableOpacity
-                  key={v.id}
-                  style={[
-                    styles.voiceChip,
-                    {
-                      backgroundColor: isSelected ? theme.tint : theme.surfaceSubtle,
-                      borderColor: isSelected ? theme.tint : theme.border,
-                    },
-                  ]}
-                  onPress={() => setPreferredVoicePart(isSelected ? null : v.id)}>
-                  <Text
-                    style={[
-                      styles.voiceChipText,
-                      { color: isSelected ? '#FFFFFF' : theme.text },
-                    ]}>
-                    {v.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
         {/* Network & Offline Mode Card */}
         <TouchableOpacity
           activeOpacity={0.8}
@@ -439,6 +438,59 @@ export default function SettingsScreen() {
               )}
               <Text style={[styles.actionButtonText, { color: Colors.status.failed }]}>
                 {isClearingCache ? 'Clearing...' : 'Clear Cache'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Software Updates Section */}
+        <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={[styles.cardHeader, { backgroundColor: 'transparent' }]}>
+            <Ionicons name="cloud-download-outline" size={20} color={theme.tint} style={{ marginRight: 8 }} />
+            <Text style={[styles.sectionTitle, { color: theme.text }]}>Software Updates</Text>
+          </View>
+          <Text style={[styles.sectionSub, { color: theme.subtext }]}>
+            Refertoire automatically scans for newer builds and notifies you when updates are ready.
+          </Text>
+
+          <View style={[styles.storageStatsRow, { backgroundColor: 'transparent' }]}>
+            <Text style={[styles.statText, { color: theme.text }]}>
+              Installed: v{UpdateService.currentVersion} (Build {UpdateService.currentBuildNumber})
+            </Text>
+            {updateCheckStatus && (
+              <Text style={[styles.statText, { color: updateCheckStatus.includes('New build') ? '#0D74CE' : Colors.status.completed }]}>
+                {updateCheckStatus}
+              </Text>
+            )}
+          </View>
+
+          <View style={[styles.buttonRow, { backgroundColor: 'transparent' }]}>
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                { backgroundColor: theme.surfaceSubtle, borderColor: theme.border },
+              ]}
+              onPress={handleCheckForUpdates}
+              disabled={isCheckingUpdate}>
+              {isCheckingUpdate ? (
+                <ActivityIndicator size="small" color={theme.tint} style={{ marginRight: 6 }} />
+              ) : (
+                <Ionicons name="refresh-outline" size={16} color={theme.text} style={{ marginRight: 6 }} />
+              )}
+              <Text style={[styles.actionButtonText, { color: theme.text }]}>
+                {isCheckingUpdate ? 'Scanning...' : 'Check for Updates'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                { backgroundColor: theme.surfaceSubtle, borderColor: theme.border },
+              ]}
+              onPress={handleTestUpdatePopup}>
+              <Ionicons name="sparkles-outline" size={16} color="#0D74CE" style={{ marginRight: 6 }} />
+              <Text style={[styles.actionButtonText, { color: '#0D74CE' }]}>
+                Test Popup
               </Text>
             </TouchableOpacity>
           </View>
@@ -686,21 +738,6 @@ const styles = StyleSheet.create({
   sectionSub: {
     fontSize: 12,
     marginBottom: 12,
-  },
-  voiceChipsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  voiceChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    borderWidth: 1,
-  },
-  voiceChipText: {
-    fontSize: 13,
-    fontWeight: '600',
   },
   storageHeader: {
     flexDirection: 'row',

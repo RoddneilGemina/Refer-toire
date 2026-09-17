@@ -22,7 +22,7 @@ export default function ScoreViewerScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colorScheme = useColorScheme();
   const theme = Colors[colorScheme];
-  const { scores, currentInstance, localUris, toggleFavorite, preferredVoicePart, userRole, deleteScore } =
+  const { scores, currentInstance, localUris, toggleFavorite, preferredVoicePart, userRole } =
     useRepertoire();
 
   // Find score from active repertoire or instance manifest
@@ -116,28 +116,6 @@ export default function ScoreViewerScreen() {
       }
     } catch (e) {
       Alert.alert('Sharing', 'Could not open share dialog.');
-    }
-  };
-
-  const handleDeleteScore = async () => {
-    const doDelete = async () => {
-      await deleteScore(score.id);
-      router.back();
-    };
-
-    if (Platform.OS === 'web') {
-      if (window.confirm(`Delete "${score.title}" from this ensemble repertoire?`)) {
-        await doDelete();
-      }
-    } else {
-      Alert.alert(
-        'Delete Score',
-        `Are you sure you want to remove "${score.title}" from this ensemble?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Delete', style: 'destructive', onPress: doDelete },
-        ]
-      );
     }
   };
 
@@ -340,16 +318,6 @@ export default function ScoreViewerScreen() {
                 color={score.isFavorite ? '#F59E0B' : activeText}
               />
             </TouchableOpacity>
-
-            {/* Admin Delete Score Action */}
-            {userRole === 'admin' && (
-              <TouchableOpacity
-                style={[styles.iconButton, { backgroundColor: '#EF444418' }]}
-                accessibilityLabel="Delete Score from Ensemble"
-                onPress={handleDeleteScore}>
-                <Ionicons name="trash-outline" size={18} color="#EF4444" />
-              </TouchableOpacity>
-            )}
           </View>
         </View>
       )}

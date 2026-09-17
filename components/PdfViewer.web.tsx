@@ -10,35 +10,34 @@ import { Ionicons } from '@expo/vector-icons';
 import { PdfViewerProps } from './PdfViewer.types';
 import { ChoralPdfService } from '@/services/choralPdfService';
 
-// Ensure PDF.js is loaded in the browser
+import { PDF_JS_CODE, PDF_WORKER_CODE } from '@/services/pdfEngineBundle';
+
+// Ensure PDF.js is loaded in the browser locally and 100% offline
 async function ensurePdfJsLoaded(): Promise<any> {
   if (typeof window === 'undefined') return null;
   if ((window as any).pdfjsLib) {
     return (window as any).pdfjsLib;
   }
 
-  return new Promise((resolve) => {
-    const existing = document.querySelector('script[src*="pdf.min.js"]');
-    if (existing) {
-      existing.addEventListener('load', () => resolve((window as any).pdfjsLib));
-      setTimeout(() => resolve((window as any).pdfjsLib || null), 2000);
-      return;
-    }
-
+  try {
+    // 1. Evaluate bundled offline PDF.js code directly (zero network / CDN reliance)
     const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    script.async = true;
-    script.onload = () => {
-      const lib = (window as any).pdfjsLib;
-      if (lib) {
-        lib.GlobalWorkerOptions.workerSrc =
-          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      }
-      resolve(lib);
-    };
-    script.onerror = () => resolve(null);
+    script.type = 'text/javascript';
+    script.text = PDF_JS_CODE;
     document.head.appendChild(script);
-  });
+
+    const lib = (window as any).pdfjsLib;
+    if (lib) {
+      // 2. Set worker to in-memory Blob URL for 100% offline worker thread
+      const blob = new Blob([PDF_WORKER_CODE], { type: 'application/javascript' });
+      lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+      return lib;
+    }
+  } catch (e) {
+    console.warn('Bundled PDF.js initialization notice:', e);
+  }
+
+  return (window as any).pdfjsLib || null;
 }
 
 export default function PdfViewerWeb({
@@ -302,6 +301,8 @@ export default function PdfViewerWeb({
         const viewport = page.getViewport({ scale: finalScale * dpr });
 
         const pageWrapper = document.createElement('div');
+        pageWrapper.dataset.page = String(p);
+        pageWrapper.id = `web-pdf-page-${p}`;
         pageWrapper.style.margin = '16px 0';
         pageWrapper.style.boxShadow = '0 6px 16px rgba(0,0,0,0.12)';
         pageWrapper.style.borderRadius = '8px';
@@ -329,6 +330,14 @@ export default function PdfViewerWeb({
           await page.render({ canvasContext: ctx, viewport }).promise;
         }
       }
+
+      // Scroll to initial page if specified
+      if (initialPage > 1 && !isCancelled) {
+        const targetEl = container.querySelector(`[data-page="${initialPage}"]`) as HTMLElement;
+        if (targetEl) {
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }
     }
 
     renderAllPagesForScroll();
@@ -336,7 +345,40 @@ export default function PdfViewerWeb({
     return () => {
       isCancelled = true;
     };
-  }, [viewMode, pdfDoc, totalPages, zoomScale, stageMode, sepiaMode, useNativeEmbed]);
+  }, [viewMode, pdfDoc, totalPages, zoomScale, stageMode, sepiaMode, useNativeEmbed, initialPage]);
+
+  // Track active page during continuous vertical scrolling
+  useEffect(() => {
+    if (viewMode !== 'scroll' || !containerRef.current) return;
+    const container = containerRef.current;
+    let ticking = false;
+
+    const handleScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        const pageEls = container.querySelectorAll('[data-page]');
+        const scrollThreshold = container.scrollTop + container.clientHeight * 0.35;
+        let detectedPage = 1;
+
+        pageEls.forEach((el: any) => {
+          const pageNum = parseInt(el.dataset.page || '1', 10);
+          if (el.offsetTop <= scrollThreshold) {
+            detectedPage = pageNum;
+          }
+        });
+
+        if (detectedPage !== currentPageRef.current) {
+          setCurrentPage(detectedPage);
+          onPageChangeRef.current?.(detectedPage, totalPagesRef.current);
+        }
+      });
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [viewMode]);
 
   // 5. Bluetooth Foot Pedal and Keyboard Page Turns
   const goToPage = useCallback((page: number) => {

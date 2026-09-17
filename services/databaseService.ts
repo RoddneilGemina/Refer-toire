@@ -12,6 +12,7 @@ import {
   PieceGenre,
 } from '@/types/repertoire';
 import { StorageService } from './storageService';
+import { NetworkService } from './networkService';
 import { supabase } from '@/lib/supabase';
 
 function generateUUID(): string {
@@ -80,30 +81,61 @@ export class DatabaseService {
 
     // 1. Persist to Supabase instances table
     try {
-      const { error: sbError } = await supabase.from('instances').insert({
+      const fullPayload: any = {
         code: finalCode,
         name: newInstance.name,
         director: newInstance.director,
         subtitle: newInstance.subtitle,
         season_name: newInstance.seasonName,
-        creator_id: currentUser?.id || null,
         admin_key: adminKey,
-      });
-      if (sbError) {
-        console.warn('Supabase group insert notice:', sbError.message);
+      };
+      if (currentUser?.id) {
+        fullPayload.creator_id = currentUser.id;
+      }
+      if (newInstance.setlists) {
+        fullPayload.setlists = newInstance.setlists;
       }
 
-      // Automatically register creator in ensemble_members table as ADMIN
+      const { error: sbError } = await supabase.from('instances').insert(fullPayload);
+      if (sbError) {
+        if (sbError.code === 'PGRST204') {
+          // Retry with core columns if optional columns (creator_id/setlists) are not migrated yet
+          const corePayload = {
+            code: finalCode,
+            name: newInstance.name,
+            director: newInstance.director,
+            subtitle: newInstance.subtitle,
+            season_name: newInstance.seasonName,
+            admin_key: adminKey,
+          };
+          const { error: retryErr } = await supabase.from('instances').insert(corePayload);
+          if (retryErr) {
+            console.warn('[Supabase Cloud] Group insert fallback error:', retryErr.message);
+          } else {
+            console.log(`[Supabase Cloud] Group "${finalCode}" published successfully with core columns!`);
+          }
+        } else {
+          console.warn('[Supabase Cloud] Group insert notice:', sbError.message);
+        }
+      } else {
+        console.log(`[Supabase Cloud] Group "${finalCode}" published successfully!`);
+      }
+
+      // Automatically register creator in ensemble_members table as ADMIN if available
       if (currentUser?.id) {
-        const { error: memberErr } = await supabase.from('ensemble_members').upsert({
-          instance_code: finalCode,
-          user_id: currentUser.id,
-          role: 'admin',
-          voice_part: currentUser.voicePart || 'General',
-          joined_at: new Date().toISOString(),
-        });
-        if (memberErr) {
-          console.warn('Supabase creator member insert notice:', memberErr.message);
+        try {
+          const { error: memberErr } = await supabase.from('ensemble_members').upsert({
+            instance_code: finalCode,
+            user_id: currentUser.id,
+            role: 'admin',
+            voice_part: currentUser.voicePart || 'General',
+            joined_at: new Date().toISOString(),
+          });
+          if (memberErr) {
+            console.warn('[Supabase Cloud] Creator membership insert notice:', memberErr.message);
+          }
+        } catch {
+          // ensemble_members table might not exist yet
         }
       }
     } catch (e) {
@@ -240,6 +272,66 @@ export class DatabaseService {
     }
 
     return null;
+  }
+
+  /**
+   * Fetch all ensembles for a given user account across devices.
+   */
+  static async getUserEnsembles(userId: string): Promise<RepertoireInstance[]> {
+    if (!userId) return [];
+    const instancesMap = new Map<string, RepertoireInstance>();
+
+    // 1. Try querying cloud ensemble_members table
+    try {
+      const { data: memberships, error } = await supabase
+        .from('ensemble_members')
+        .select('instance_code, role')
+        .eq('user_id', userId);
+
+      if (memberships && !error) {
+        for (const m of memberships) {
+          const inst = await this.getGroupByCode(m.instance_code);
+          if (inst) {
+            instancesMap.set(inst.code, inst);
+            await StorageService.setUserRole(inst.code, m.role as UserRole);
+          }
+        }
+      }
+    } catch {
+      // Ignored if table doesn't exist yet
+    }
+
+    // 2. Try querying instances created by user (creator_id)
+    try {
+      const { data: created, error } = await supabase
+        .from('instances')
+        .select('code')
+        .eq('creator_id', userId);
+
+      if (created && !error) {
+        for (const c of created) {
+          if (!instancesMap.has(c.code)) {
+            const inst = await this.getGroupByCode(c.code);
+            if (inst) {
+              instancesMap.set(inst.code, inst);
+              await StorageService.setUserRole(inst.code, 'admin');
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignored if column doesn't exist yet
+    }
+
+    // 3. Merge with local custom instances
+    const localCustom = await StorageService.getCustomInstances();
+    for (const inst of localCustom) {
+      if (!instancesMap.has(inst.code)) {
+        instancesMap.set(inst.code, inst);
+      }
+    }
+
+    return Array.from(instancesMap.values());
   }
 
   /**
@@ -684,6 +776,11 @@ export class DatabaseService {
       throw new Error(`Group instance ${instanceCode} not found.`);
     }
 
+    const isOffline = await StorageService.getOfflineMode();
+    if (isOffline || !NetworkService.isOnline()) {
+      throw new Error('Upload unavailable: device is in Offline Mode or has no internet connection. Please connect online to upload scores.');
+    }
+
     const scoreId = generateUUID();
     const fileName = `${scoreId}.pdf`;
 
@@ -733,17 +830,20 @@ export class DatabaseService {
             upsert: true,
           });
 
-        if (!uploadError && uploadData) {
+        if (uploadError) {
+          throw new Error(`Cloud storage upload failed: ${uploadError.message}. Please check your internet connection.`);
+        }
+
+        if (uploadData) {
           const { data: urlData } = supabase.storage.from('scores').getPublicUrl(storagePath);
           if (urlData?.publicUrl) {
             cloudFileUrl = urlData.publicUrl;
           }
-        } else if (uploadError) {
-          console.warn('Supabase storage upload notice:', uploadError.message);
         }
       }
-    } catch (storageErr) {
+    } catch (storageErr: any) {
       console.warn('Supabase storage upload exception:', storageErr);
+      throw new Error(storageErr?.message || 'Failed to upload PDF file to cloud storage.');
     }
 
     const newScore: ScoreItem = {
@@ -770,37 +870,70 @@ export class DatabaseService {
 
     // Insert record in Supabase scores table
     try {
+      const fullScorePayload: any = {
+        id: scoreId,
+        instance_code: instanceCode,
+        title: newScore.title,
+        composer: newScore.composer,
+        arranger: newScore.arranger || null,
+        voicing: newScore.voicing,
+        season: newScore.season,
+        genre: newScore.genre,
+        key_signature: newScore.keySignature || null,
+        tempo: newScore.tempo || null,
+        duration: newScore.duration,
+        page_count: newScore.pageCount,
+        file_url: cloudFileUrl,
+        file_size: newScore.fileSize,
+        notes: newScore.notes || null,
+        tags: newScore.tags,
+        uploaded_by: uploaderId || null,
+      };
+
       const { data: insertedScore, error: dbErr } = await supabase
         .from('scores')
-        .insert({
-          id: scoreId,
-          instance_code: instanceCode,
-          title: newScore.title,
-          composer: newScore.composer,
-          arranger: newScore.arranger || null,
-          voicing: newScore.voicing,
-          season: newScore.season,
-          genre: newScore.genre,
-          key_signature: newScore.keySignature || null,
-          tempo: newScore.tempo || null,
-          duration: newScore.duration,
-          page_count: newScore.pageCount,
-          file_url: cloudFileUrl,
-          file_size: newScore.fileSize,
-          notes: newScore.notes || null,
-          tags: newScore.tags,
-          uploaded_by: uploaderId || null,
-        })
+        .insert(fullScorePayload)
         .select()
         .single();
 
       if (dbErr) {
-        console.warn('Supabase DB score insert notice:', dbErr.message);
+        if (dbErr.code === 'PGRST204') {
+          // Retry with standard base columns (excluding genre and uploaded_by if not migrated)
+          const baseScorePayload: any = {
+            id: scoreId,
+            instance_code: instanceCode,
+            title: newScore.title,
+            composer: newScore.composer,
+            arranger: newScore.arranger || null,
+            voicing: newScore.voicing,
+            season: newScore.season,
+            key_signature: newScore.keySignature || null,
+            tempo: newScore.tempo || null,
+            duration: newScore.duration,
+            page_count: newScore.pageCount,
+            file_url: cloudFileUrl,
+            file_size: newScore.fileSize,
+            notes: newScore.notes || null,
+            tags: newScore.tags,
+          };
+          const { error: retryErr } = await supabase.from('scores').insert(baseScorePayload);
+          if (retryErr) {
+            console.warn('[Supabase Cloud] Score base insert error:', retryErr.message);
+            throw new Error(`Database score registration failed: ${retryErr.message}`);
+          } else {
+            console.log(`[Supabase Cloud] Score "${newScore.title}" saved to cloud database!`);
+          }
+        } else {
+          console.warn('[Supabase Cloud] DB score insert notice:', dbErr.message);
+          throw new Error(`Database score registration failed: ${dbErr.message}`);
+        }
       } else if (insertedScore) {
         newScore.id = insertedScore.id;
+        console.log(`[Supabase Cloud] Score "${newScore.title}" saved to cloud database!`);
       }
-    } catch (dbErr) {
+    } catch (dbErr: any) {
       console.warn('Supabase DB score insert notice:', dbErr);
+      throw new Error(dbErr?.message || 'Database error while saving score.');
     }
 
     // Save to local instance catalog & cache

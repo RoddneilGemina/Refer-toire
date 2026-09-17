@@ -1,18 +1,11 @@
 -- ==============================================================================
--- REFER-TOIRE SUPABASE SCHEMA
+-- REFERTOIRE SUPABASE SCHEMA & MULTI-DEVICE CLOUD SYNC MIGRATION
 -- Project ID: ctfxbeltcmmsvagecvyr
--- Run this in your Supabase SQL Editor: https://supabase.com/dashboard/project/ctfxbeltcmmsvagecvyr/sql
+-- Run this in your Supabase SQL Editor:
+-- https://supabase.com/dashboard/project/ctfxbeltcmmsvagecvyr/sql
 -- ==============================================================================
 
--- ------------------------------------------------------------------------------
--- 0. CLEAN SLATE PURGE (Clears all previous test groups, scores, and storage)
--- ------------------------------------------------------------------------------
--- Uncomment to execute a fresh clean slate in Supabase SQL Editor:
--- DELETE FROM public.scores;
--- DELETE FROM public.instances;
--- DELETE FROM storage.objects WHERE bucket_id = 'scores';
-
--- 1. Create profiles table (links to Supabase Auth auth.users)
+-- 1. Create profiles table (Links with Supabase Auth auth.users)
 CREATE TABLE IF NOT EXISTS public.profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT UNIQUE NOT NULL,
@@ -22,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 2. Create instances table (Choir groups)
+-- 2. Create instances table (Choir groups & ensemble codes)
 CREATE TABLE IF NOT EXISTS public.instances (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code TEXT UNIQUE NOT NULL,
@@ -30,20 +23,28 @@ CREATE TABLE IF NOT EXISTS public.instances (
   director TEXT NOT NULL,
   subtitle TEXT,
   season_name TEXT,
-  creator_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  creator_id UUID,
   admin_key TEXT,
   setlists JSONB DEFAULT '[]'::jsonb,
   created_at TIMESTAMPTZ DEFAULT now(),
   last_updated TIMESTAMPTZ DEFAULT now()
 );
 
--- 3. Create ensemble_members table (tracks who joins an ensemble with roles)
+-- Ensure all columns exist on instances (Migration safety)
+ALTER TABLE public.instances ADD COLUMN IF NOT EXISTS subtitle TEXT;
+ALTER TABLE public.instances ADD COLUMN IF NOT EXISTS season_name TEXT;
+ALTER TABLE public.instances ADD COLUMN IF NOT EXISTS creator_id UUID;
+ALTER TABLE public.instances ADD COLUMN IF NOT EXISTS admin_key TEXT;
+ALTER TABLE public.instances ADD COLUMN IF NOT EXISTS setlists JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.instances ADD COLUMN IF NOT EXISTS last_updated TIMESTAMPTZ DEFAULT now();
+
+-- 3. Create ensemble_members table (Multi-device account membership & roles)
 CREATE TABLE IF NOT EXISTS public.ensemble_members (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   instance_code TEXT NOT NULL REFERENCES public.instances(code) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('admin', 'member')) DEFAULT 'member',
-  voice_part TEXT,
+  voice_part TEXT DEFAULT 'General',
   joined_at TIMESTAMPTZ DEFAULT now(),
   CONSTRAINT unique_member_per_ensemble UNIQUE (instance_code, user_id)
 );
@@ -66,21 +67,31 @@ CREATE TABLE IF NOT EXISTS public.scores (
   file_size BIGINT DEFAULT 0,
   notes TEXT,
   tags TEXT[] DEFAULT '{}',
-  uploaded_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  uploaded_by UUID,
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 4.1 Migration helpers (for upgrading existing database deployments)
-ALTER TABLE public.instances ADD COLUMN IF NOT EXISTS setlists JSONB DEFAULT '[]'::jsonb;
+-- Ensure all columns exist on scores (Migration safety)
+ALTER TABLE public.scores ADD COLUMN IF NOT EXISTS arranger TEXT;
+ALTER TABLE public.scores ADD COLUMN IF NOT EXISTS voicing TEXT DEFAULT 'SATB';
 ALTER TABLE public.scores ADD COLUMN IF NOT EXISTS genre TEXT DEFAULT 'General';
+ALTER TABLE public.scores ADD COLUMN IF NOT EXISTS season TEXT DEFAULT 'General';
+ALTER TABLE public.scores ADD COLUMN IF NOT EXISTS key_signature TEXT;
+ALTER TABLE public.scores ADD COLUMN IF NOT EXISTS tempo TEXT;
+ALTER TABLE public.scores ADD COLUMN IF NOT EXISTS duration TEXT DEFAULT '3:00';
+ALTER TABLE public.scores ADD COLUMN IF NOT EXISTS page_count INT DEFAULT 2;
+ALTER TABLE public.scores ADD COLUMN IF NOT EXISTS file_size BIGINT DEFAULT 0;
+ALTER TABLE public.scores ADD COLUMN IF NOT EXISTS notes TEXT;
+ALTER TABLE public.scores ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}';
+ALTER TABLE public.scores ADD COLUMN IF NOT EXISTS uploaded_by UUID;
 
--- 5. Indexes for instant lookup and sorting
+-- 5. Indexes for high-speed cross-device queries
 CREATE INDEX IF NOT EXISTS idx_instances_code ON public.instances(code);
 CREATE INDEX IF NOT EXISTS idx_scores_instance_code ON public.scores(instance_code);
 CREATE INDEX IF NOT EXISTS idx_ensemble_members_code ON public.ensemble_members(instance_code);
 CREATE INDEX IF NOT EXISTS idx_ensemble_members_user ON public.ensemble_members(user_id);
 
--- 6. Automatically sync auth.users into public.profiles
+-- 6. Automatically sync Supabase Auth users to public.profiles
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 BEGIN
@@ -112,43 +123,83 @@ ALTER TABLE public.instances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ensemble_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scores ENABLE ROW LEVEL SECURITY;
 
--- 8. Access Policies for profiles
+-- 8. Permissive RLS Policies for Refertoire App Clients
+DROP POLICY IF EXISTS "Allow public read profiles" ON public.profiles;
 CREATE POLICY "Allow public read profiles" ON public.profiles FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow public insert profiles" ON public.profiles;
 CREATE POLICY "Allow public insert profiles" ON public.profiles FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow update own profile" ON public.profiles FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow public update profiles" ON public.profiles;
+CREATE POLICY "Allow public update profiles" ON public.profiles FOR UPDATE USING (true);
 
--- 9. Access Policies for instances
+DROP POLICY IF EXISTS "Allow public read instances" ON public.instances;
 CREATE POLICY "Allow public read instances" ON public.instances FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow insert instances" ON public.instances;
 CREATE POLICY "Allow insert instances" ON public.instances FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow update instances" ON public.instances;
 CREATE POLICY "Allow update instances" ON public.instances FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow delete instances" ON public.instances;
 CREATE POLICY "Allow delete instances" ON public.instances FOR DELETE USING (true);
 
--- 10. Access Policies for ensemble_members
+DROP POLICY IF EXISTS "Allow public read ensemble_members" ON public.ensemble_members;
 CREATE POLICY "Allow public read ensemble_members" ON public.ensemble_members FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow insert ensemble_members" ON public.ensemble_members;
 CREATE POLICY "Allow insert ensemble_members" ON public.ensemble_members FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow update ensemble_members" ON public.ensemble_members;
 CREATE POLICY "Allow update ensemble_members" ON public.ensemble_members FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow delete ensemble_members" ON public.ensemble_members;
 CREATE POLICY "Allow delete ensemble_members" ON public.ensemble_members FOR DELETE USING (true);
 
--- 11. Access Policies for scores
+DROP POLICY IF EXISTS "Allow public read scores" ON public.scores;
 CREATE POLICY "Allow public read scores" ON public.scores FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Allow insert scores" ON public.scores;
 CREATE POLICY "Allow insert scores" ON public.scores FOR INSERT WITH CHECK (true);
+DROP POLICY IF EXISTS "Allow update scores" ON public.scores;
 CREATE POLICY "Allow update scores" ON public.scores FOR UPDATE USING (true);
+DROP POLICY IF EXISTS "Allow delete scores" ON public.scores;
 CREATE POLICY "Allow delete scores" ON public.scores FOR DELETE USING (true);
 
--- 12. Storage Bucket for PDF sheet music
+-- 9. Storage Bucket for PDF sheet music
 INSERT INTO storage.buckets (id, name, public) 
 VALUES ('scores', 'scores', true)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET public = true;
 
--- 13. Storage bucket access policies
+DROP POLICY IF EXISTS "Allow public score read" ON storage.objects;
 CREATE POLICY "Allow public score read" ON storage.objects
   FOR SELECT USING (bucket_id = 'scores');
 
+DROP POLICY IF EXISTS "Allow score upload" ON storage.objects;
 CREATE POLICY "Allow score upload" ON storage.objects
   FOR INSERT WITH CHECK (bucket_id = 'scores');
 
+DROP POLICY IF EXISTS "Allow score update" ON storage.objects;
 CREATE POLICY "Allow score update" ON storage.objects
   FOR UPDATE USING (bucket_id = 'scores');
 
+DROP POLICY IF EXISTS "Allow score delete" ON storage.objects;
 CREATE POLICY "Allow score delete" ON storage.objects
   FOR DELETE USING (bucket_id = 'scores');
+
+-- 10. App Releases & Auto-Update Table
+CREATE TABLE IF NOT EXISTS public.app_releases (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  version TEXT NOT NULL,
+  build_number INT NOT NULL,
+  release_notes TEXT,
+  apk_url TEXT,
+  file_size BIGINT DEFAULT 0,
+  is_mandatory BOOLEAN DEFAULT false,
+  min_supported_version TEXT,
+  published_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.app_releases ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public read app_releases" ON public.app_releases;
+CREATE POLICY "Allow public read app_releases" ON public.app_releases FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow admin insert app_releases" ON public.app_releases;
+CREATE POLICY "Allow admin insert app_releases" ON public.app_releases FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow admin update app_releases" ON public.app_releases;
+CREATE POLICY "Allow admin update app_releases" ON public.app_releases FOR UPDATE USING (true);
+
