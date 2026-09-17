@@ -33,32 +33,48 @@ class UpdateServiceManager {
 
   private initVersionInfo() {
     try {
+      // 1. Direct inspection from native platform (available on standalone Android/iOS APK builds)
+      if (Constants.nativeAppVersion) {
+        this._currentVersion = Constants.nativeAppVersion;
+      }
+      if (Constants.nativeBuildVersion) {
+        const nativeBuild = Number(Constants.nativeBuildVersion);
+        if (!isNaN(nativeBuild) && nativeBuild > 0) {
+          this._currentBuildNumber = nativeBuild;
+        }
+      }
+
+      // 2. Fallback to embedded Expo manifest/config if native values are absent
       const config: any =
         Constants.expoConfig ||
         (Constants as any).manifest ||
         (Constants as any).manifest2 ||
         {};
 
-      if (config.version) {
-        this._currentVersion = config.version;
-      } else if (config.extra?.version) {
-        this._currentVersion = config.extra.version;
+      if (!Constants.nativeAppVersion) {
+        if (config.version) {
+          this._currentVersion = config.version;
+        } else if (config.extra?.version) {
+          this._currentVersion = config.extra.version;
+        }
       }
 
-      const candidateBuild =
-        config.android?.versionCode ??
-        (config.ios?.buildNumber ? parseInt(config.ios.buildNumber, 10) : undefined) ??
-        config.extra?.versionCode ??
-        config.extra?.buildNumber;
+      if (!Constants.nativeBuildVersion) {
+        const candidateBuild =
+          config.android?.versionCode ??
+          (config.ios?.buildNumber ? parseInt(config.ios.buildNumber, 10) : undefined) ??
+          config.extra?.versionCode ??
+          config.extra?.buildNumber;
 
-      if (candidateBuild !== undefined && candidateBuild !== null) {
-        const num = Number(candidateBuild);
-        if (!isNaN(num) && num > 0) {
-          this._currentBuildNumber = num;
+        if (candidateBuild !== undefined && candidateBuild !== null) {
+          const num = Number(candidateBuild);
+          if (!isNaN(num) && num > 0) {
+            this._currentBuildNumber = num;
+          }
         }
       }
     } catch {
-      // Default to 1.1.0 (Build 3)
+      // Default fallback
     }
   }
 
