@@ -81,6 +81,7 @@ function RootLayoutNav() {
           name="score/[id]"
           options={{
             headerShown: false,
+            orientation: 'all',
           }}
         />
         <Stack.Screen name="modal" options={{ presentation: 'modal' }} />

@@ -2,17 +2,19 @@
   "expo": {
     "name": "Refertoire",
     "slug": "Refer-toire",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "refertoire",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.refertoire.app"
+      "bundleIdentifier": "com.refertoire.app",
+      "buildNumber": "2"
     },
     "android": {
       "package": "com.refertoire.app",
+      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#FFF9F5",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

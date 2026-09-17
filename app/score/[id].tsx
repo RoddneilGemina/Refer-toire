@@ -7,10 +7,12 @@ import {
   Share,
   Platform,
   Dimensions,
+  StatusBar,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Sharing from 'expo-sharing';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { Text, View } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
@@ -57,6 +59,15 @@ export default function ScoreViewerScreen() {
       document.addEventListener('fullscreenchange', handleFsChange);
       return () => document.removeEventListener('fullscreenchange', handleFsChange);
     }
+  }, []);
+
+  // Ensure orientation is re-locked to portrait when navigating away from score viewer
+  useEffect(() => {
+    return () => {
+      if (Platform.OS !== 'web') {
+        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+      }
+    };
   }, []);
 
   if (!score) {
@@ -119,15 +130,35 @@ export default function ScoreViewerScreen() {
     }
   };
 
-  const handleToggleFullscreen = () => {
+  const handleToggleFullscreen = async () => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen().catch(() => {});
+        try {
+          await document.documentElement.requestFullscreen();
+        } catch {}
         setIsFullscreen(true);
       } else {
-        document.exitFullscreen().catch(() => {});
+        try {
+          await document.exitFullscreen();
+        } catch {}
         setIsFullscreen(false);
       }
+      return;
+    }
+
+    try {
+      if (!isFullscreen) {
+        // Unlock orientation to allow both portrait and landscape viewing
+        await ScreenOrientation.unlockAsync();
+        setIsFullscreen(true);
+      } else {
+        // Re-lock to standard portrait orientation
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        setIsFullscreen(false);
+      }
+    } catch (err) {
+      console.warn('Screen orientation toggle notice:', err);
+      setIsFullscreen(!isFullscreen);
     }
   };
 
@@ -166,8 +197,26 @@ export default function ScoreViewerScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: activeBg }]}>
-      {/* Top Action Bar (toggled with screen click or performance mode) */}
-      {showControls && (
+      <StatusBar
+        hidden={isFullscreen}
+        backgroundColor={activeBg}
+        barStyle={colorScheme === 'dark' || stageMode ? 'light-content' : 'dark-content'}
+      />
+
+      {/* Floating Exit Fullscreen Button - sole UI element in Fullscreen */}
+      {isFullscreen && (
+        <TouchableOpacity
+          style={styles.exitFullscreenFloatingBtn}
+          onPress={handleToggleFullscreen}
+          activeOpacity={0.85}
+          accessibilityLabel="Exit Fullscreen Mode">
+          <Ionicons name="contract-outline" size={18} color="#FFFFFF" />
+          <Text style={styles.exitFullscreenFloatingText}>Exit Fullscreen</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Top Action Bar (toggled with screen click or performance mode - hidden in fullscreen) */}
+      {!isFullscreen && showControls && (
         <View style={[styles.header, { backgroundColor: activeCard, borderBottomColor: activeBorder }]}>
           {/* Back Button */}
           <TouchableOpacity
@@ -285,19 +334,17 @@ export default function ScoreViewerScreen() {
               />
             </TouchableOpacity>
 
-            {/* Web Fullscreen Toggle */}
-            {Platform.OS === 'web' && (
-              <TouchableOpacity
-                style={[styles.iconButton, { backgroundColor: theme.surfaceSubtle }]}
-                accessibilityLabel={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-                onPress={handleToggleFullscreen}>
-                <Ionicons
-                  name={isFullscreen ? 'contract-outline' : 'expand-outline'}
-                  size={18}
-                  color={activeText}
-                />
-              </TouchableOpacity>
-            )}
+            {/* Fullscreen Mode Toggle (Web & Native) */}
+            <TouchableOpacity
+              style={[styles.iconButton, { backgroundColor: theme.surfaceSubtle }]}
+              accessibilityLabel={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+              onPress={handleToggleFullscreen}>
+              <Ionicons
+                name={isFullscreen ? 'contract-outline' : 'expand-outline'}
+                size={18}
+                color={activeText}
+              />
+            </TouchableOpacity>
 
             {/* Share / Open External (forScore) */}
             <TouchableOpacity
@@ -344,8 +391,8 @@ export default function ScoreViewerScreen() {
           onToggleControls={handleToggleControls}
         />
 
-        {/* Page Turn Floating Controls (Single Page Mode) */}
-        {viewMode === 'single' && (
+        {/* Page Turn Floating Controls (Single Page Mode - hidden in fullscreen) */}
+        {!isFullscreen && viewMode === 'single' && (
           <View
             style={[
               styles.pageControls,
@@ -381,15 +428,16 @@ export default function ScoreViewerScreen() {
         )}
       </View>
 
-      {/* Collapsible Conductor Notes & Metadata Drawer */}
-      <View
-        style={[
-          styles.drawer,
-          {
-            backgroundColor: activeCard,
-            borderTopColor: activeBorder,
-          },
-        ]}>
+      {/* Collapsible Conductor Notes & Metadata Drawer (hidden in fullscreen) */}
+      {!isFullscreen && (
+        <View
+          style={[
+            styles.drawer,
+            {
+              backgroundColor: activeCard,
+              borderTopColor: activeBorder,
+            },
+          ]}>
         <TouchableOpacity
           style={[styles.drawerHandle, { backgroundColor: 'transparent' }]}
           onPress={() => setShowNotesDrawer(!showNotesDrawer)}>
@@ -453,6 +501,7 @@ export default function ScoreViewerScreen() {
           </View>
         )}
       </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -669,5 +718,31 @@ const styles = StyleSheet.create({
   backButtonText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  exitFullscreenFloatingBtn: {
+    position: 'absolute',
+    top: Platform.OS === 'web' ? 16 : 42,
+    right: 16,
+    zIndex: 9999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.82)',
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 8,
+    gap: 7,
+  },
+  exitFullscreenFloatingText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 });

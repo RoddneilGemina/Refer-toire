@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -229,9 +229,60 @@ export default function PdfViewer(props: PdfViewerProps) {
     );
   }
 
-  // Self-contained 100% offline HTML5 PDF.js / Choral Canvas Reader
-  const htmlContent = `
-<!DOCTYPE html>
+  // Memoize WebView source so it ONLY changes when pdfDataUri changes.
+  // Dynamic updates (page turn, zoom, stage mode) are pushed via injectJavaScript without reloading the WebView!
+  const webViewSource = useMemo(() => {
+    if (!pdfDataUri) return undefined;
+    return { html: buildPdfViewerHtml(pdfDataUri) };
+  }, [pdfDataUri]);
+
+  return (
+    <View style={[styles.container, { backgroundColor: stageMode ? '#05070A' : sepiaMode ? '#FAF5EA' : '#FFFFFF' }]}>
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={stageMode ? '#F59E0B' : '#0D74CE'} />
+          <Text style={[styles.loadingText, { color: stageMode ? '#E2E8F0' : '#1E293B' }]}>
+            Opening Sheet Music...
+          </Text>
+        </View>
+      )}
+
+      {pdfDataUri && webViewSource ? (
+        <WebView
+          ref={webViewRef}
+          source={webViewSource}
+          style={{
+            flex: 1,
+            backgroundColor: stageMode ? '#05070A' : sepiaMode ? '#FAF5EA' : '#FFFFFF',
+          }}
+          originWhitelist={['*']}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          scalesPageToFit={true}
+          scrollEnabled={true}
+          bounces={false}
+          overScrollMode="never"
+          allowFileAccess={true}
+          allowFileAccessFromFileURLs={true}
+          allowUniversalAccessFromFileURLs={true}
+          mixedContentMode="always"
+          onMessage={handleWebViewMessage}
+          onError={(syntheticEvent: any) => {
+            setLoading(false);
+            const { nativeEvent } = syntheticEvent;
+            console.warn('Native WebView PDF Error:', nativeEvent);
+            onErrorRef.current?.(nativeEvent.description || 'Failed to load sheet music');
+          }}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+// Self-contained 100% offline HTML5 PDF.js / Choral Canvas Reader
+// Constructed once per score to guarantee zero reloads during rehearsal & performance
+function buildPdfViewerHtml(pdfDataUri: string): string {
+  return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -243,28 +294,36 @@ export default function PdfViewer(props: PdfViewerProps) {
       height: 100%;
       margin: 0;
       padding: 0;
-      background-color: ${stageMode ? '#05070A' : sepiaMode ? '#FAF5EA' : '#FFFFFF'};
+      overflow: hidden;
+      background-color: #FFFFFF;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      transition: background-color 0.25s ease;
       user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.25s ease;
     }
     #viewport {
       width: 100%;
       height: 100%;
       position: relative;
-      overflow-x: hidden;
-      overflow-y: ${viewMode === 'scroll' ? 'auto' : 'hidden'};
-      -webkit-overflow-scrolling: touch;
       display: flex;
       flex-direction: column;
       align-items: center;
+      justify-content: center;
+      overflow-x: hidden;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
     }
     #pages-container {
       width: 100%;
+      height: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: ${viewMode === 'scroll' ? '16px 0 60px 0' : '0'};
+      justify-content: center;
+      padding: 0;
+      margin: 0;
       transition: filter 0.25s ease;
     }
     .page-wrapper {
@@ -272,17 +331,16 @@ export default function PdfViewer(props: PdfViewerProps) {
       display: flex;
       flex-direction: column;
       align-items: center;
-      margin: ${viewMode === 'scroll' ? '0 auto 24px auto' : 'auto'};
-      box-shadow: ${stageMode ? '0 8px 32px rgba(0,0,0,0.8)' : '0 4px 20px rgba(0,0,0,0.15)'};
-      border-radius: 8px;
+      justify-content: center;
+      margin: auto;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.16);
+      border-radius: 6px;
       overflow: hidden;
       background-color: #FFFFFF;
-      transition: transform 0.2s ease;
     }
     canvas {
       display: block;
-      width: 100%;
-      height: auto;
+      margin: 0 auto;
     }
     .page-tag {
       width: 100%;
@@ -320,7 +378,7 @@ export default function PdfViewer(props: PdfViewerProps) {
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      color: ${stageMode ? '#F59E0B' : '#0D74CE'};
+      color: #0D74CE;
       font-weight: 600;
       font-size: 14px;
       text-align: center;
@@ -356,12 +414,12 @@ export default function PdfViewer(props: PdfViewerProps) {
 
   <script>
     let pdfDoc = null;
-    let pageNum = ${initialPage};
+    let pageNum = 1;
     let totalPages = 1;
-    let currentZoom = ${zoomScale};
-    let currentViewMode = '${viewMode}';
-    let isStage = ${stageMode};
-    let isSepia = ${sepiaMode};
+    let currentZoom = 1.0;
+    let currentViewMode = 'single';
+    let isStage = false;
+    let isSepia = false;
     let pageWrappers = {};
     let scrollTimeout = null;
 
@@ -384,18 +442,30 @@ export default function PdfViewer(props: PdfViewerProps) {
 
       try {
         const page = await pdfDoc.getPage(num);
-        const viewportWidth = window.innerWidth * 0.95;
-        const unscaledViewport = page.getViewport({ scale: 1.0 });
-        let baseScale = (viewportWidth / unscaledViewport.width);
-        baseScale = Math.min(Math.max(baseScale, 0.7), 2.5);
+        const unscaled = page.getViewport({ scale: 1.0 });
+
+        // Calculate available viewport dimensions considering margins
+        const availW = Math.max(window.innerWidth - 12, 100);
+        const availH = Math.max(window.innerHeight - 12, 100);
+        const scaleW = (availW / unscaled.width) * 0.98;
+        const scaleH = (availH / unscaled.height) * 0.98;
+
+        // In single page mode, fit BOTH width and height so the sheet music is NEVER cut out of frame!
+        let baseScale = (currentViewMode === 'single') ? Math.min(scaleW, scaleH) : scaleW;
+        baseScale = Math.min(Math.max(baseScale, 0.3), 3.0);
         const finalScale = baseScale * currentZoom;
         const dpr = window.devicePixelRatio || 1;
         const viewport = page.getViewport({ scale: finalScale * dpr });
 
+        const displayW = Math.floor(viewport.width / dpr);
+        const displayH = Math.floor(viewport.height / dpr);
+
         item.canvas.width = viewport.width;
         item.canvas.height = viewport.height;
-        item.canvas.style.width = Math.floor(viewport.width / dpr) + 'px';
-        item.canvas.style.height = Math.floor(viewport.height / dpr) + 'px';
+        item.canvas.style.width = displayW + 'px';
+        item.canvas.style.height = displayH + 'px';
+        item.wrapper.style.width = displayW + 'px';
+        item.wrapper.style.height = displayH + 'px';
 
         await page.render({
           canvasContext: item.ctx,
@@ -416,13 +486,15 @@ export default function PdfViewer(props: PdfViewerProps) {
       if (currentViewMode === 'scroll') {
         viewport.style.overflowY = 'auto';
         viewport.style.overflowX = 'hidden';
+        viewport.style.justifyContent = 'flex-start';
+        container.style.justifyContent = 'flex-start';
         container.style.padding = '16px 0 60px 0';
         zones.forEach(z => z.style.display = 'none');
 
         for (let p = 1; p <= totalPages; p++) {
           if (pageWrappers[p]) {
             pageWrappers[p].wrapper.style.display = 'flex';
-            pageWrappers[p].wrapper.style.margin = '0 auto 24px auto';
+            pageWrappers[p].wrapper.style.margin = '0 auto 20px auto';
             if (pageWrappers[p].tag) pageWrappers[p].tag.style.display = 'block';
           }
         }
@@ -430,6 +502,8 @@ export default function PdfViewer(props: PdfViewerProps) {
         viewport.style.overflowY = 'hidden';
         viewport.style.overflowX = 'hidden';
         viewport.scrollTop = 0;
+        viewport.style.justifyContent = 'center';
+        container.style.justifyContent = 'center';
         container.style.padding = '0';
         zones.forEach(z => z.style.display = 'block');
 
@@ -519,6 +593,17 @@ export default function PdfViewer(props: PdfViewerProps) {
       sendRN({ type: 'toggleControls' });
     }
 
+    // Handle screen rotation / resize dynamically without reloading the document
+    window.addEventListener('resize', function() {
+      for (let p = 1; p <= totalPages; p++) {
+        if (pageWrappers[p]) pageWrappers[p].rendered = false;
+      }
+      renderPageCanvas(pageNum);
+      for (let p = 1; p <= totalPages; p++) {
+        if (p !== pageNum) renderPageCanvas(p);
+      }
+    });
+
     // Scroll position observer to update page indicator during manual scrolling
     const viewportElem = document.getElementById('viewport');
     viewportElem.addEventListener('scroll', function() {
@@ -607,45 +692,18 @@ export default function PdfViewer(props: PdfViewerProps) {
       ctx.scale(dpr, dpr);
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = '#1E293B';
+      ctx.font = 'bold 20px serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Sheet Music', w / 2, 60);
 
-      ctx.fillStyle = '#0D74CE';
-      ctx.font = 'bold 16px sans-serif';
-      ctx.fillText("${title}", 30, 45);
-
-      ctx.fillStyle = '#475569';
-      ctx.font = '12px sans-serif';
-      ctx.fillText("${composer}  •  ${voicing}", 30, 68);
-
-      ctx.strokeStyle = '#CBD5E1';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(30, 80);
-      ctx.lineTo(w - 30, 80);
-      ctx.stroke();
-
-      const staffTops = [130, 240, 350, 460];
-      staffTops.forEach((top, sIdx) => {
-        ctx.strokeStyle = '#1E293B';
-        ctx.lineWidth = 0.8;
+      [130, 210, 290, 370].forEach((top, sIdx) => {
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 1;
         for (let i = 0; i < 5; i++) {
           ctx.beginPath();
           ctx.moveTo(30, top + i * 8);
           ctx.lineTo(w - 30, top + i * 8);
-          ctx.stroke();
-        }
-        ctx.fillStyle = '#0F172A';
-        ctx.font = 'bold 14px serif';
-        ctx.fillText(sIdx % 2 === 0 ? '𝄞' : '𝄢', 35, top + 24);
-
-        for (let n = 0; n < 6; n++) {
-          const nx = 80 + n * (w - 140) / 6;
-          const ny = top + 16 - (n % 4) * 4;
-          ctx.beginPath();
-          ctx.arc(nx, ny, 3.5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.moveTo(nx + 3, ny);
-          ctx.lineTo(nx + 3, ny - 16);
           ctx.stroke();
         }
       });
@@ -690,50 +748,7 @@ export default function PdfViewer(props: PdfViewerProps) {
     setTimeout(initPdf, 50);
   </script>
 </body>
-</html>
-  `;
-
-  return (
-    <View style={[styles.container, { backgroundColor: stageMode ? '#05070A' : sepiaMode ? '#FAF5EA' : '#FFFFFF' }]}>
-      {loading && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={stageMode ? '#F59E0B' : '#0D74CE'} />
-          <Text style={[styles.loadingText, { color: stageMode ? '#E2E8F0' : '#1E293B' }]}>
-            Opening Sheet Music...
-          </Text>
-        </View>
-      )}
-
-      {pdfDataUri ? (
-        <WebView
-          ref={webViewRef}
-          source={{ html: htmlContent }}
-          style={{
-            flex: 1,
-            backgroundColor: stageMode ? '#05070A' : sepiaMode ? '#FAF5EA' : '#FFFFFF',
-          }}
-          originWhitelist={['*']}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          scalesPageToFit={true}
-          scrollEnabled={true}
-          bounces={false}
-          overScrollMode="never"
-          allowFileAccess={true}
-          allowFileAccessFromFileURLs={true}
-          allowUniversalAccessFromFileURLs={true}
-          mixedContentMode="always"
-          onMessage={handleWebViewMessage}
-          onError={(syntheticEvent: any) => {
-            setLoading(false);
-            const { nativeEvent } = syntheticEvent;
-            console.warn('Native WebView PDF Error:', nativeEvent);
-            onErrorRef.current?.(nativeEvent.description || 'Failed to load sheet music');
-          }}
-        />
-      ) : null}
-    </View>
-  );
+</html>`;
 }
 
 const styles = StyleSheet.create({
