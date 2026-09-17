@@ -10,6 +10,7 @@ import {
   Platform,
   Switch,
   Image,
+  Linking,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -468,6 +469,19 @@ export default function SettingsScreen() {
                 {isCheckingUpdate ? 'Scanning for Updates...' : 'Check for Updates'}
               </Text>
             </TouchableOpacity>
+            {Platform.OS === 'web' && (
+              <TouchableOpacity
+                style={[
+                  styles.actionButton,
+                  { backgroundColor: theme.tint, borderColor: theme.tint, marginLeft: 10, justifyContent: 'center' },
+                ]}
+                onPress={() => Linking.openURL('https://refertoire.github.io/demoapk/Refertoire.apk')}>
+                <Ionicons name="logo-android" size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={[styles.actionButtonText, { color: '#FFFFFF', fontWeight: '700' }]}>
+                  Download APK
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 

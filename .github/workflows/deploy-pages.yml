@@ -44,6 +44,9 @@ jobs:
           cp Refertoire.apk dist/Refertoire.apk
           mkdir -p dist/demoapk
           cp Refertoire.apk dist/demoapk/Refertoire.apk
+          mkdir -p dist/download
+          cp public/demoapk/index.html dist/demoapk/index.html
+          cp public/download/index.html dist/download/index.html
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

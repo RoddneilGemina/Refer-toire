@@ -10,6 +10,7 @@ import {
   SafeAreaView,
   Alert,
   Image,
+  Linking,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -640,6 +641,20 @@ export default function LoginScreen() {
             </View>
           )}
 
+          {/* Web Standalone APK Download Banner */}
+          {Platform.OS === 'web' && (
+            <TouchableOpacity
+              style={[styles.apkBanner, { backgroundColor: theme.surfaceSubtle, borderColor: theme.border }]}
+              onPress={() => Linking.openURL('https://refertoire.github.io/demoapk/Refertoire.apk')}>
+              <Ionicons name="logo-android" size={20} color="#22C55E" style={{ marginRight: 10 }} />
+              <View style={{ backgroundColor: 'transparent', flex: 1 }}>
+                <Text style={[styles.apkBannerTitle, { color: theme.text }]}>Download Android App (.APK)</Text>
+                <Text style={[styles.apkBannerSub, { color: theme.subtext }]}>Offline sheet music & rehearsal scores on Android</Text>
+              </View>
+              <Ionicons name="download-outline" size={18} color={theme.tint} />
+            </TouchableOpacity>
+          )}
+
           {/* Keyboard Buffer Spacer */}
           <View style={styles.keyboardBuffer} />
         </ScrollView>
@@ -875,5 +890,22 @@ const styles = StyleSheet.create({
   },
   keyboardBuffer: {
     height: 40,
+  },
+  apkBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginTop: 18,
+  },
+  apkBannerTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  apkBannerSub: {
+    fontSize: 12,
+    marginTop: 2,
   },
 });
