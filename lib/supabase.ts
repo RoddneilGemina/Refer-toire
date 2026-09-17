@@ -11,6 +11,19 @@ const supabaseAnonKey =
 const isWeb = Platform.OS === 'web';
 const isServer = isWeb && typeof window === 'undefined';
 
+// Provide WebSocket fallback during Node.js SSG static export rendering
+if (isServer && typeof (globalThis as any).WebSocket === 'undefined') {
+  try {
+    (globalThis as any).WebSocket = class MockWebSocket {
+      constructor() {}
+      addEventListener() {}
+      removeEventListener() {}
+      send() {}
+      close() {}
+    };
+  } catch {}
+}
+
 if (isWeb && supabaseAnonKey.startsWith('sb_secret_')) {
   console.warn(
     '[Supabase Warning] EXPO_PUBLIC_SUPABASE_ANON_KEY contains a secret key (sb_secret_...). ' +
