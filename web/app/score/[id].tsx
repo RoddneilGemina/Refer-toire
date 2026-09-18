@@ -22,7 +22,7 @@ import Colors from '@/constants/Colors';
 import { useRepertoire } from '@/context/RepertoireContext';
 import { DatabaseService } from '@/services/databaseService';
 import { supabase } from '@/lib/supabase';
-import { Score } from '@/types/repertoire';
+import { ScoreItem } from '@/types/repertoire';
 import PdfViewer from '@/components/PdfViewer';
 import { ViewMode } from '@/components/PdfViewer.types';
 
@@ -33,7 +33,7 @@ export default function ScoreViewerScreen() {
   const { scores, currentInstance, localUris, toggleFavorite, preferredVoicePart, userRole } =
     useRepertoire();
 
-  const [fetchedScore, setFetchedScore] = useState<Score | null>(null);
+  const [fetchedScore, setFetchedScore] = useState<ScoreItem | null>(null);
 
   // Find score from active repertoire, instance manifest, or directly fetched
   const score =
@@ -56,6 +56,7 @@ export default function ScoreViewerScreen() {
               title: data.title,
               composer: data.composer,
               voicing: data.voicing,
+              season: (data.category as any) || 'General',
               keySignature: data.key_signature,
               tempo: data.tempo,
               duration: data.duration,
@@ -64,8 +65,9 @@ export default function ScoreViewerScreen() {
               localUri: data.source_url,
               notes: data.notes,
               tags: data.tags || [],
-              category: data.category,
               fileSize: data.file_size || 0,
+              downloadStatus: 'completed',
+              addedAt: data.created_at || new Date().toISOString(),
             });
           }
         });
@@ -131,7 +133,7 @@ export default function ScoreViewerScreen() {
     );
   }
 
-  const voicingColors = Colors.voicings[score.voicing] || {
+  const voicingColors = (Colors.voicings as Record<string, any>)[score.voicing] || {
     bg: theme.surfaceSubtle,
     text: theme.text,
     darkBg: theme.surfaceSubtle,
@@ -568,7 +570,7 @@ export default function ScoreViewerScreen() {
             </View>
 
             <View style={[styles.tagsRow, { backgroundColor: 'transparent' }]}>
-              {score.tags.map((tag) => (
+              {score.tags.map((tag: string) => (
                 <View
                   key={tag}
                   style={[styles.tagPill, { backgroundColor: theme.surfaceSubtle }]}>

@@ -298,51 +298,79 @@ function buildPdfViewerHtml(pdfDataUri: string): string {
       background-color: #FFFFFF;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       user-select: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
       transition: background-color 0.25s ease;
     }
     #viewport {
       width: 100%;
       height: 100%;
       position: relative;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      overflow-x: hidden;
-      overflow-y: hidden;
-      -webkit-overflow-scrolling: touch;
+      overflow: hidden;
     }
-    #pages-container {
+
+    /* 1. Single Page View Mode: Dedicated Centered Container */
+    #single-container {
+      position: absolute;
+      top: 0;
+      left: 0;
       width: 100%;
       height: 100%;
       display: flex;
-      flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 0;
-      margin: 0;
-      transition: filter 0.25s ease;
+      overflow: hidden;
+      z-index: 10;
     }
-    .page-wrapper {
+    #single-page-wrapper {
       position: relative;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       margin: auto;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.16);
-      border-radius: 6px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+      border-radius: 8px;
       overflow: hidden;
       background-color: #FFFFFF;
+      flex-shrink: 0 !important;
     }
-    canvas {
+    #single-canvas {
       display: block;
       margin: 0 auto;
+      flex-shrink: 0 !important;
     }
-    .page-tag {
+
+    /* 2. Continuous Scroll View Mode: Native Block Container (Never compressed by Flexbox) */
+    #scroll-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      padding: 16px 8px 80px 8px;
+      box-sizing: border-box;
+      display: none;
+      z-index: 10;
+    }
+    .scroll-page-card {
+      position: relative;
+      display: block;
+      margin: 0 auto 20px auto;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.16);
+      border-radius: 8px;
+      overflow: hidden;
+      background-color: #FFFFFF;
+      flex-shrink: 0 !important;
+      box-sizing: border-box;
+    }
+    .scroll-page-card canvas {
+      display: block;
+      margin: 0 auto;
+      flex-shrink: 0 !important;
+    }
+    .scroll-page-tag {
       width: 100%;
       text-align: center;
       padding: 6px 0;
@@ -352,6 +380,7 @@ function buildPdfViewerHtml(pdfDataUri: string): string {
       background-color: #F8FAFC;
       border-top: 1px solid #E2E8F0;
     }
+
     /* Touch Navigation Zones (Single Page Mode) */
     .touch-zone {
       position: fixed;
@@ -382,7 +411,7 @@ function buildPdfViewerHtml(pdfDataUri: string): string {
       font-weight: 600;
       font-size: 14px;
       text-align: center;
-      z-index: 50;
+      z-index: 200;
       background: rgba(0,0,0,0.08);
       padding: 12px 22px;
       border-radius: 20px;
@@ -404,12 +433,21 @@ function buildPdfViewerHtml(pdfDataUri: string): string {
 <body>
   <div id="viewport">
     <div id="loading-indicator">Opening Sheet Music...</div>
-    <div id="pages-container"></div>
 
-    <!-- Touch Navigation Zones (Single Page Mode) -->
-    <div id="zone-left" class="touch-zone" onclick="prevPage()"></div>
-    <div id="zone-center" class="touch-zone" onclick="toggleControls()"></div>
-    <div id="zone-right" class="touch-zone" onclick="nextPage()"></div>
+    <!-- Single Page Mode Container -->
+    <div id="single-container">
+      <div id="single-page-wrapper">
+        <canvas id="single-canvas"></canvas>
+      </div>
+
+      <!-- Touch Navigation Zones -->
+      <div id="zone-left" class="touch-zone" onclick="prevPage()"></div>
+      <div id="zone-center" class="touch-zone" onclick="toggleControls()"></div>
+      <div id="zone-right" class="touch-zone" onclick="nextPage()"></div>
+    </div>
+
+    <!-- Continuous Scroll Mode Container -->
+    <div id="scroll-container" onclick="handleScrollContainerClick(event)"></div>
   </div>
 
   <script>
@@ -420,7 +458,8 @@ function buildPdfViewerHtml(pdfDataUri: string): string {
     let currentViewMode = 'single';
     let isStage = false;
     let isSepia = false;
-    let pageWrappers = {};
+    let scrollCards = {};
+    let offscreenPages = {}; // p -> { canvas, displayW, displayH, width, height }
     let scrollTimeout = null;
 
     function sendRN(msg) {
@@ -430,136 +469,172 @@ function buildPdfViewerHtml(pdfDataUri: string): string {
     }
 
     function applyVisualFilters() {
-      const container = document.getElementById('pages-container');
-      if (!container) return;
-      container.className = isStage ? 'stage-mode' : (isSepia ? 'sepia-mode' : '');
+      const viewport = document.getElementById('viewport');
+      if (!viewport) return;
+      viewport.className = isStage ? 'stage-mode' : (isSepia ? 'sepia-mode' : '');
       document.body.style.backgroundColor = isStage ? '#05070A' : (isSepia ? '#FAF5EA' : '#FFFFFF');
     }
 
-    async function renderPageCanvas(num) {
-      const item = pageWrappers[num];
-      if (!item || !pdfDoc || item.rendered) return;
+    async function renderPageToOffscreen(p) {
+      if (!pdfDoc || offscreenPages[p]) return offscreenPages[p];
 
       try {
-        const page = await pdfDoc.getPage(num);
+        const page = await pdfDoc.getPage(p);
         const unscaled = page.getViewport({ scale: 1.0 });
 
-        // Calculate available viewport dimensions considering margins
-        const availW = Math.max(window.innerWidth - 12, 100);
-        const availH = Math.max(window.innerHeight - 12, 100);
+        const availW = Math.max(window.innerWidth - 16, 100);
+        const availH = Math.max(window.innerHeight - 16, 100);
         const scaleW = (availW / unscaled.width) * 0.98;
         const scaleH = (availH / unscaled.height) * 0.98;
 
-        // In single page mode, fit BOTH width and height so the sheet music is NEVER cut out of frame!
-        let baseScale = (currentViewMode === 'single') ? Math.min(scaleW, scaleH) : scaleW;
-        baseScale = Math.min(Math.max(baseScale, 0.3), 3.0);
-        const finalScale = baseScale * currentZoom;
+        // In single mode fit both width & height; in scroll mode fit width
+        const baseScale = (currentViewMode === 'single') ? Math.min(scaleW, scaleH) : scaleW;
+        const finalScale = Math.min(Math.max(baseScale * currentZoom, 0.3), 3.0);
         const dpr = window.devicePixelRatio || 1;
         const viewport = page.getViewport({ scale: finalScale * dpr });
 
         const displayW = Math.floor(viewport.width / dpr);
         const displayH = Math.floor(viewport.height / dpr);
 
-        item.canvas.width = viewport.width;
-        item.canvas.height = viewport.height;
-        item.canvas.style.width = displayW + 'px';
-        item.canvas.style.height = displayH + 'px';
-        item.wrapper.style.width = displayW + 'px';
-        item.wrapper.style.height = displayH + 'px';
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = viewport.width;
+        offCanvas.height = viewport.height;
+        const offCtx = offCanvas.getContext('2d');
 
         await page.render({
-          canvasContext: item.ctx,
+          canvasContext: offCtx,
           viewport: viewport
         }).promise;
 
-        item.rendered = true;
+        const record = {
+          canvas: offCanvas,
+          displayW: displayW,
+          displayH: displayH,
+          width: viewport.width,
+          height: viewport.height,
+        };
+
+        offscreenPages[p] = record;
+        return record;
       } catch (err) {
-        console.warn('Preload page error ' + num, err);
+        console.warn('Error rendering offscreen page ' + p, err);
+        return null;
       }
     }
 
-    function updateLayout() {
-      const viewport = document.getElementById('viewport');
-      const container = document.getElementById('pages-container');
-      const zones = document.querySelectorAll('.touch-zone');
+    function blitSinglePage(p) {
+      const rec = offscreenPages[p];
+      if (!rec) return;
+
+      const wrapper = document.getElementById('single-page-wrapper');
+      const canvas = document.getElementById('single-canvas');
+      if (!wrapper || !canvas) return;
+
+      canvas.width = rec.width;
+      canvas.height = rec.height;
+      canvas.style.width = rec.displayW + 'px';
+      canvas.style.height = rec.displayH + 'px';
+
+      wrapper.style.width = rec.displayW + 'px';
+      wrapper.style.height = rec.displayH + 'px';
+      wrapper.style.minHeight = rec.displayH + 'px';
+
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, rec.width, rec.height);
+      ctx.drawImage(rec.canvas, 0, 0);
+    }
+
+    function blitScrollCard(p) {
+      const rec = offscreenPages[p];
+      const cardItem = scrollCards[p];
+      if (!rec || !cardItem) return;
+
+      cardItem.canvas.width = rec.width;
+      cardItem.canvas.height = rec.height;
+      cardItem.canvas.style.width = rec.displayW + 'px';
+      cardItem.canvas.style.height = rec.displayH + 'px';
+
+      cardItem.card.style.width = rec.displayW + 'px';
+      cardItem.card.style.height = (rec.displayH + 28) + 'px'; // +28px for page tag
+      cardItem.card.style.minHeight = (rec.displayH + 28) + 'px';
+
+      const ctx = cardItem.canvas.getContext('2d');
+      ctx.clearRect(0, 0, rec.width, rec.height);
+      ctx.drawImage(rec.canvas, 0, 0);
+    }
+
+    function updateViewMode(mode) {
+      currentViewMode = mode;
+      const singleContainer = document.getElementById('single-container');
+      const scrollContainer = document.getElementById('scroll-container');
 
       if (currentViewMode === 'scroll') {
-        viewport.style.overflowY = 'auto';
-        viewport.style.overflowX = 'hidden';
-        viewport.style.justifyContent = 'flex-start';
-        container.style.justifyContent = 'flex-start';
-        container.style.padding = '16px 0 60px 0';
-        zones.forEach(z => z.style.display = 'none');
+        singleContainer.style.display = 'none';
+        scrollContainer.style.display = 'block';
 
+        // Ensure all scroll cards have their content blitted
         for (let p = 1; p <= totalPages; p++) {
-          if (pageWrappers[p]) {
-            pageWrappers[p].wrapper.style.display = 'flex';
-            pageWrappers[p].wrapper.style.margin = '0 auto 20px auto';
-            if (pageWrappers[p].tag) pageWrappers[p].tag.style.display = 'block';
+          if (offscreenPages[p]) {
+            blitScrollCard(p);
           }
+        }
+
+        // Scroll to active page
+        if (scrollCards[pageNum] && scrollCards[pageNum].card) {
+          scrollCards[pageNum].card.scrollIntoView({ behavior: 'auto', block: 'start' });
         }
       } else {
-        viewport.style.overflowY = 'hidden';
-        viewport.style.overflowX = 'hidden';
-        viewport.scrollTop = 0;
-        viewport.style.justifyContent = 'center';
-        container.style.justifyContent = 'center';
-        container.style.padding = '0';
-        zones.forEach(z => z.style.display = 'block');
-
-        for (let p = 1; p <= totalPages; p++) {
-          if (pageWrappers[p]) {
-            pageWrappers[p].wrapper.style.display = (p === pageNum) ? 'flex' : 'none';
-            pageWrappers[p].wrapper.style.margin = 'auto';
-            if (pageWrappers[p].tag) pageWrappers[p].tag.style.display = 'none';
-          }
-        }
+        scrollContainer.style.display = 'none';
+        singleContainer.style.display = 'flex';
+        blitSinglePage(pageNum);
       }
 
       applyVisualFilters();
     }
 
     async function preloadAllPages() {
-      const container = document.getElementById('pages-container');
-      container.innerHTML = '';
-      pageWrappers = {};
+      const scrollContainer = document.getElementById('scroll-container');
+      scrollContainer.innerHTML = '';
+      scrollCards = {};
+      offscreenPages = {};
 
+      // 1. Build scroll cards in DOM
       for (let p = 1; p <= totalPages; p++) {
-        const wrapper = document.createElement('div');
-        wrapper.id = 'page-wrapper-' + p;
-        wrapper.className = 'page-wrapper';
+        const card = document.createElement('div');
+        card.id = 'scroll-page-' + p;
+        card.className = 'scroll-page-card';
 
         const canvas = document.createElement('canvas');
-        canvas.id = 'canvas-' + p;
-        wrapper.appendChild(canvas);
+        canvas.id = 'scroll-canvas-' + p;
+        card.appendChild(canvas);
 
         const tag = document.createElement('div');
-        tag.className = 'page-tag';
+        tag.className = 'scroll-page-tag';
         tag.innerText = 'Page ' + p + ' of ' + totalPages;
-        wrapper.appendChild(tag);
+        card.appendChild(tag);
 
-        container.appendChild(wrapper);
+        scrollContainer.appendChild(card);
 
-        pageWrappers[p] = {
-          wrapper: wrapper,
+        scrollCards[p] = {
+          card: card,
           canvas: canvas,
-          ctx: canvas.getContext('2d'),
-          tag: tag,
-          rendered: false,
         };
       }
 
-      updateLayout();
-
-      // Priority render active page so sheet music is instantly readable
-      await renderPageCanvas(pageNum);
+      // 2. Render initial active page immediately
+      const rec = await renderPageToOffscreen(pageNum);
       const loader = document.getElementById('loading-indicator');
       if (loader) loader.style.display = 'none';
 
-      // Background pre-rendering of all remaining pages for 0ms instantaneous page switching
+      blitSinglePage(pageNum);
+      blitScrollCard(pageNum);
+      updateViewMode(currentViewMode);
+
+      // 3. Pre-render remaining pages in background
       for (let p = 1; p <= totalPages; p++) {
         if (p !== pageNum) {
-          await renderPageCanvas(p);
+          await renderPageToOffscreen(p);
+          blitScrollCard(p);
         }
       }
     }
@@ -568,11 +643,11 @@ function buildPdfViewerHtml(pdfDataUri: string): string {
       if (n < 1 || n > totalPages) return;
       pageNum = n;
       if (currentViewMode === 'scroll') {
-        if (pageWrappers[pageNum]) {
-          pageWrappers[pageNum].wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (scrollCards[pageNum] && scrollCards[pageNum].card) {
+          scrollCards[pageNum].card.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
       } else {
-        updateLayout();
+        blitSinglePage(pageNum);
       }
       sendRN({ type: 'pageChange', page: pageNum, totalPages: totalPages });
     }
@@ -593,33 +668,40 @@ function buildPdfViewerHtml(pdfDataUri: string): string {
       sendRN({ type: 'toggleControls' });
     }
 
-    // Handle screen rotation / resize dynamically without reloading the document
-    window.addEventListener('resize', function() {
+    function handleScrollContainerClick(e) {
+      sendRN({ type: 'toggleControls' });
+    }
+
+    // Window resize observer
+    window.addEventListener('resize', async function() {
+      offscreenPages = {};
+      await renderPageToOffscreen(pageNum);
+      blitSinglePage(pageNum);
+      blitScrollCard(pageNum);
       for (let p = 1; p <= totalPages; p++) {
-        if (pageWrappers[p]) pageWrappers[p].rendered = false;
-      }
-      renderPageCanvas(pageNum);
-      for (let p = 1; p <= totalPages; p++) {
-        if (p !== pageNum) renderPageCanvas(p);
+        if (p !== pageNum) {
+          await renderPageToOffscreen(p);
+          blitScrollCard(p);
+        }
       }
     });
 
-    // Scroll position observer to update page indicator during manual scrolling
-    const viewportElem = document.getElementById('viewport');
-    viewportElem.addEventListener('scroll', function() {
+    // Scroll position observer in scroll mode
+    const scrollContainerElem = document.getElementById('scroll-container');
+    scrollContainerElem.addEventListener('scroll', function() {
       if (currentViewMode !== 'scroll') return;
       if (scrollTimeout) clearTimeout(scrollTimeout);
       scrollTimeout = setTimeout(function() {
-        const vTop = viewportElem.scrollTop;
-        const vMid = vTop + (viewportElem.clientHeight / 2);
+        const vTop = scrollContainerElem.scrollTop;
+        const vMid = vTop + (scrollContainerElem.clientHeight / 2);
         let closestPage = pageNum;
         let minDiff = Infinity;
 
         for (let p = 1; p <= totalPages; p++) {
-          const item = pageWrappers[p];
-          if (item && item.wrapper) {
-            const top = item.wrapper.offsetTop;
-            const center = top + (item.wrapper.offsetHeight / 2);
+          const item = scrollCards[p];
+          if (item && item.card) {
+            const top = item.card.offsetTop;
+            const center = top + (item.card.offsetHeight / 2);
             const diff = Math.abs(vMid - center);
             if (diff < minDiff) {
               minDiff = diff;
@@ -635,36 +717,39 @@ function buildPdfViewerHtml(pdfDataUri: string): string {
       }, 60);
     }, { passive: true });
 
+    // Handle messages from React Native
     window.handleAppMessage = function(data) {
-      if (data.type === 'updateProps') {
-        if (data.stageMode !== undefined) isStage = data.stageMode;
-        if (data.sepiaMode !== undefined) isSepia = data.sepiaMode;
-        if (data.zoomScale !== undefined && Math.abs(data.zoomScale - currentZoom) > 0.05) {
-          currentZoom = data.zoomScale;
-          for (let p = 1; p <= totalPages; p++) {
-            if (pageWrappers[p]) pageWrappers[p].rendered = false;
+      try {
+        if (data.type === 'updateProps') {
+          if (data.stageMode !== undefined) isStage = data.stageMode;
+          if (data.sepiaMode !== undefined) isSepia = data.sepiaMode;
+
+          if (data.zoomScale !== undefined && Math.abs(data.zoomScale - currentZoom) > 0.05) {
+            currentZoom = data.zoomScale;
+            offscreenPages = {};
+            renderPageToOffscreen(pageNum).then(() => {
+              blitSinglePage(pageNum);
+              blitScrollCard(pageNum);
+              for (let p = 1; p <= totalPages; p++) {
+                if (p !== pageNum) {
+                  renderPageToOffscreen(p).then(() => blitScrollCard(p));
+                }
+              }
+            });
           }
-          renderPageCanvas(pageNum);
-          for (let p = 1; p <= totalPages; p++) {
-            if (p !== pageNum) renderPageCanvas(p);
+
+          if (data.viewMode !== undefined && data.viewMode !== currentViewMode) {
+            updateViewMode(data.viewMode);
           }
+
+          if (data.page && data.page !== pageNum && data.page >= 1 && data.page <= totalPages) {
+            goToPage(data.page);
+          }
+
+          applyVisualFilters();
         }
-        if (data.viewMode !== undefined && data.viewMode !== currentViewMode) {
-          currentViewMode = data.viewMode;
-          updateLayout();
-          if (currentViewMode === 'scroll' && pageWrappers[pageNum]) {
-            pageWrappers[pageNum].wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        }
-        if (data.page && data.page !== pageNum && data.page >= 1 && data.page <= totalPages) {
-          pageNum = data.page;
-          if (currentViewMode === 'scroll' && pageWrappers[pageNum]) {
-            pageWrappers[pageNum].wrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          } else {
-            updateLayout();
-          }
-        }
-        applyVisualFilters();
+      } catch (e) {
+        console.warn('handleAppMessage error:', e);
       }
     };
 
@@ -672,41 +757,46 @@ function buildPdfViewerHtml(pdfDataUri: string): string {
     function renderOfflineChoralScoreFallback() {
       const loader = document.getElementById('loading-indicator');
       if (loader) loader.style.display = 'none';
-      const container = document.getElementById('pages-container');
-      container.innerHTML = '';
+      const singleContainer = document.getElementById('single-container');
+      if (singleContainer) singleContainer.style.display = 'flex';
+      const scrollContainer = document.getElementById('scroll-container');
+      if (scrollContainer) scrollContainer.style.display = 'none';
+
       const dpr = window.devicePixelRatio || 1;
       const w = Math.min(window.innerWidth * 0.94, 600);
       const h = w * 1.35;
 
-      const wrap = document.createElement('div');
-      wrap.className = 'page-wrapper';
-      const cvs = document.createElement('canvas');
-      cvs.width = w * dpr;
-      cvs.height = h * dpr;
-      cvs.style.width = w + 'px';
-      cvs.style.height = h + 'px';
-      wrap.appendChild(cvs);
-      container.appendChild(wrap);
+      const wrapper = document.getElementById('single-page-wrapper');
+      const cvs = document.getElementById('single-canvas');
+      if (wrapper && cvs) {
+        wrapper.style.width = w + 'px';
+        wrapper.style.height = h + 'px';
+        wrapper.style.minHeight = h + 'px';
+        cvs.width = w * dpr;
+        cvs.height = h * dpr;
+        cvs.style.width = w + 'px';
+        cvs.style.height = h + 'px';
 
-      const ctx = cvs.getContext('2d');
-      ctx.scale(dpr, dpr);
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = '#1E293B';
-      ctx.font = 'bold 20px serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('Sheet Music', w / 2, 60);
+        const ctx = cvs.getContext('2d');
+        ctx.scale(dpr, dpr);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, w, h);
+        ctx.fillStyle = '#1E293B';
+        ctx.font = 'bold 20px serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Sheet Music', w / 2, 60);
 
-      [130, 210, 290, 370].forEach((top, sIdx) => {
-        ctx.strokeStyle = '#334155';
-        ctx.lineWidth = 1;
-        for (let i = 0; i < 5; i++) {
-          ctx.beginPath();
-          ctx.moveTo(30, top + i * 8);
-          ctx.lineTo(w - 30, top + i * 8);
-          ctx.stroke();
-        }
-      });
+        [130, 210, 290, 370].forEach((top) => {
+          ctx.strokeStyle = '#334155';
+          ctx.lineWidth = 1;
+          for (let i = 0; i < 5; i++) {
+            ctx.beginPath();
+            ctx.moveTo(30, top + i * 8);
+            ctx.lineTo(w - 30, top + i * 8);
+            ctx.stroke();
+          }
+        });
+      }
 
       totalPages = 1;
       sendRN({ type: 'loaded', totalPages: 1 });
