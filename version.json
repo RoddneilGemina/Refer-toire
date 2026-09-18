@@ -1,10 +1,10 @@
 {
-  "version": "1.1.0",
-  "buildNumber": 3,
-  "releaseNotes": "• Fix page squishing/clipping bug on Android APK when toggling single page and scroll modes\n• Dedicated dual-container viewport with native block scrolling and flex-shrink protection\n• Removed redundant sheet music upload option from ensemble settings\n• New 'Go to Page' numeric jump & quick-chip navigation in PDF Score Viewer\n• Accurate PDF page counts synced across library and Supabase\n• High-performance persistent offscreen canvas caching",
+  "version": "1.1.1",
+  "buildNumber": 4,
+  "releaseNotes": "• In-app direct installation: Tapping 'Install Update' now opens the Android system Package Installer directly instead of the sharing sheet\n• Integrated REQUEST_INSTALL_PACKAGES permission and native intent launcher\n• Fix page squishing/clipping bug on Android APK when toggling single page and scroll modes\n• Dedicated dual-container viewport with native block scrolling and flex-shrink protection\n• High-performance persistent offscreen canvas caching\n• New 'Go to Page' numeric jump & quick-chip navigation in PDF Score Viewer\n• Accurate PDF page counts synced across library and Supabase\n• Synced web and mobile releases with updated landing page",
   "apkUrl": "https://refertoire.github.io/apk/Refertoire.apk",
-  "fileSize": 48982673,
+  "fileSize": 48995793,
   "isMandatory": false,
   "minSupportedVersion": "1.0.0",
-  "publishedAt": "2026-09-18T05:53:00Z"
+  "publishedAt": "2026-09-18T06:30:00Z"
 }

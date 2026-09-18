@@ -1,7 +1,7 @@
 import { Platform, Linking } from 'react-native';
 import Constants from 'expo-constants';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
+import * as IntentLauncher from 'expo-intent-launcher';
 import { supabase } from '@/lib/supabase';
 import { NetworkService } from '@/services/networkService';
 import {
@@ -19,8 +19,8 @@ try {
 }
 
 class UpdateServiceManager {
-  private _currentVersion: string = '1.1.0';
-  private _currentBuildNumber: number = 3;
+  private _currentVersion: string = '1.1.1';
+  private _currentBuildNumber: number = 4;
   private _activeDownload: any = null;
   private _simulatedRelease: AppRelease | null = null;
   private _updateListeners: Set<(update: AppRelease) => void> = new Set();
@@ -450,19 +450,30 @@ class UpdateServiceManager {
   public async installDownloadedApk(fileUri: string, release?: AppRelease): Promise<void> {
     if (Platform.OS === 'android') {
       try {
-        const canShare = await Sharing.isAvailableAsync();
-        if (canShare) {
-          await Sharing.shareAsync(fileUri, {
-            mimeType: 'application/vnd.android.package-archive',
-            dialogTitle: `Install Refertoire Update`,
-            UTI: 'com.android.package-archive',
-          });
-          return;
-        }
-      } catch (shareErr) {
-        console.warn('Sharing install fallback to Linking:', shareErr);
+        // Convert the local file URI to an Android content:// URI to allow package installer access
+        const contentUri = await FileSystem.getContentUriAsync(fileUri);
+
+        // Directly open the native Android Package Installer to install/update the APK
+        await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+          data: contentUri,
+          type: 'application/vnd.android.package-archive',
+          flags: 1, // Intent.FLAG_GRANT_READ_URI_PERMISSION
+        });
+        return;
+      } catch (intentErr) {
+        console.warn('IntentLauncher install error, attempting direct Linking fallback:', intentErr);
       }
 
+      // Fallback 1: Direct Linking to content URI
+      try {
+        const contentUri = await FileSystem.getContentUriAsync(fileUri);
+        await Linking.openURL(contentUri);
+        return;
+      } catch (linkUriErr) {
+        console.warn('Linking contentUri fallback error:', linkUriErr);
+      }
+
+      // Fallback 2: Direct release APK URL (browser/system download manager)
       if (release?.apkUrl) {
         try {
           await Linking.openURL(release.apkUrl);
